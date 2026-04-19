@@ -1,0 +1,8 @@
+let 
+    val deux = "bonjour"
+    val test = deux
+    fun double n = 2
+in
+    print test;
+    print deux
+end
