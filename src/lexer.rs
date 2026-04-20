@@ -18,11 +18,8 @@ pub enum Token {
     #[token("end")]
     End,
 
-    #[regex("andalso|orelse", |op| op.slice().to_owned())]
-    BooleanOperator(String),
-
-    #[regex(r"[+\-\*\/\(\)]", |op| op.slice().to_owned())]
-    MathOperator(String),
+    #[regex(r"andalso|orelse|\+|-|\*|\\|\(|\)|<=|>=|<|>", |op| op.slice().to_owned(), priority=20)]
+    Operator(String),
 
     #[token("=")]
     EqualSign,
@@ -39,13 +36,13 @@ pub enum Token {
     #[regex(r"[0-9]*\.?[0-9]+", |num| num.slice().parse().ok())]
     Number(f64),
 
-    #[regex(r"(true|false)", |boolean| boolean.slice().parse().ok())]
+    #[regex(r"true|false", |boolean| boolean.slice().parse().ok())]
     Boolean(bool),
 
     #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_owned())]
     StringLiteral(String),
 
-    #[regex(r"[a-zA-Z]+", |id| id.slice().to_owned())]
+    #[regex(r"[a-zA-Z\_]+", |id| id.slice().to_owned())]
     Identifier(String),
 
     #[token(";")]

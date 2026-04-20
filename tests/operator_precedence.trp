@@ -1,0 +1,15 @@
+let
+  fun crash () = 1 + ()
+  val arithmetic =
+    (1 + 2 * 3 = 7) andalso true
+
+  val comparison_vs_andalso =
+    (1 = 1) andalso false
+
+  val andalso_vs_orelse =
+    true orelse false andalso crash()
+in
+  print arithmetic;
+  print comparison_vs_andalso;
+  print andalso_vs_orelse
+end
