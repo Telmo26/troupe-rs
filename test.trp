@@ -1,6 +1,6 @@
 let 
-    val deux = "bonjour"
-    val test = deux
+    val greeting = "bonjour"
+    val test = if 2 = 3 then 1 else 3 * 4
     fun affine n = 3 + 2*n
 in
     let
@@ -9,5 +9,5 @@ in
         print affineTest
     end;
     print test;
-    print deux
+    print greeting
 end

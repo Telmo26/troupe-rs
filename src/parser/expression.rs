@@ -8,9 +8,12 @@ pub enum Expression {
         callee: Box<Expression>, 
         argument: Box<Expression>
     },
-    Operation(char, Vec<Expression>),
+    MathOperation(String, Vec<Expression>),
+    BooleanOperation(String, Vec<Expression>),
+    Conditional(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
     Number(f64),
     StringLiteral(String),
+    Boolean(bool),
     Identifier(String)
 }
 

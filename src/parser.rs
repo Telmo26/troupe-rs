@@ -10,43 +10,24 @@ pub fn parse(lexer: &mut PeekableLexer<'_>) -> Result<Expression, ParsingError> 
 }
 
 fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<Expression, ParsingError> {
-    println!("Parsing expression: {:?}", lexer.peek());
+    // println!("Parsing expression: {:?}", lexer.peek());
     let mut lhs = match lexer.next() {
         Some(Ok(token)) => match token {
                 Token::Let => parse_let(lexer)?,
                 Token::Number(n) => Expression::Number(n),
                 Token::StringLiteral(s) => Expression::StringLiteral(s),
+                Token::Boolean(b) => Expression::Boolean(b),
                 Token::Identifier(s) => Expression::Identifier(s),
-                Token::Operator(op) => if op == '(' {
+                Token::If => parse_conditional(lexer)?,
+                Token::MathOperator(op) => if op == "(" {
                     let lhs = parse_expr(lexer, 0)?;
-                    assert_eq!(lexer.next(), Some(Ok(Token::Operator(')'))));
+                    assert_eq!(lexer.next(), Some(Ok(Token::MathOperator(")".to_owned()))));
                     lhs
                 } else {
                     let (_, r_bp) = (0, 8);
                     let rhs = parse_expr(lexer, r_bp)?;
-                    Expression::Operation(op, vec![rhs])
+                    Expression::MathOperation(op, vec![rhs])
                 }
-                // { 
-                //     if let Some(Ok(token)) = lexer.peek() {
-                //         match token {
-                //             Token::SemiColon | Token::End | Token::In | Token::Val | Token::Fun => Ok(Expression::Identifier(s)),
-                //             _ => { 
-                //                 // this is a function call
-                //                 let mut parameters = Vec::new();
-                //                 while let Some(Ok(token)) = lexer.peek() && 
-                //                     matches!(token, Token::Identifier(_) | Token::Number(_)) 
-                //                 {
-                //                     parameters.push(parse_parameter(lexer)?);
-                //                 };
-                //                 if matches!(lexer.peek(), Some(Ok(Token::SemiColon))) { lexer.next(); } // We skip the semi colon
-
-                //                 Ok(Expression::FunctionCall { name: s, parameters })
-                //             }
-                //         } 
-                //     } else {
-                //         Err(ParsingError::InvalidSyntax)
-                //     }                 
-                // }
                 _ => {
                     println!("Parsing {token:?}");
                     return Err(ParsingError::InvalidSyntax)
@@ -62,30 +43,47 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<Expression, P
                 break;
             },
 
-            Some(Ok(Token::Operator('('))) => {
+            Some(Ok(Token::MathOperator(op))) if op == "(" => {
                 lexer.next();
                 let argument = Box::new(parse_expr(lexer, 0)?);
-                assert_eq!(lexer.next(), Some(Ok(Token::Operator(')'))));
+                assert_eq!(lexer.next(), Some(Ok(Token::MathOperator(")".to_owned()))));
                 lhs = Expression::FunctionCall { callee: Box::new(lhs), argument };
                 continue;
             }
 
-            Some(Ok(Token::Operator(')'))) => break,
+            Some(Ok(Token::MathOperator(op))) if op == ")" => break,
 
-            Some(Ok(Token::Operator(op))) => {
-                let op = *op;
-                if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+            Some(Ok(Token::MathOperator(op))) => {
+                let op = op.clone();
+                if let Some((l_bp, r_bp)) = infix_binding_power(&op) {
                     if l_bp < min_bp {
                         break;
                     }
                     lexer.next();
                     lhs = {
                         let rhs = parse_expr(lexer, r_bp)?;
-                        Expression::Operation(op, vec![lhs, rhs])
+                        Expression::MathOperation(op, vec![lhs, rhs])
                     };
                     continue;
                 }
             },
+
+            Some(Ok(Token::BooleanOperator(op))) => {
+                let op = op.clone();
+                lexer.next();
+                lhs = {
+                    let rhs = parse_expr(lexer, 0)?;
+                    Expression::BooleanOperation(op, vec![lhs, rhs])
+                };
+                continue;
+            },
+
+            Some(Ok(Token::EqualSign)) => {
+                lexer.next();
+                let rhs = parse_expr(lexer, 0)?;
+                lhs = Expression::BooleanOperation("=".to_owned(), vec![lhs, rhs]);
+                continue;
+            }
 
             Some(Ok(Token::Number(_))) 
             | Some(Ok(Token::StringLiteral(_))) 
@@ -137,7 +135,7 @@ fn parse_variable(lexer: &mut PeekableLexer<'_>) -> Result<Declaration, ParsingE
         _ => return Err(ParsingError::InvalidSyntax),
     };
 
-    assert_eq!(lexer.next(), Some(Ok(Token::Assignment)));
+    assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
 
     let value = parse_expr(lexer, 0)?;
 
@@ -160,19 +158,35 @@ fn parse_function(lexer: &mut PeekableLexer<'_>) -> Result<Declaration, ParsingE
         parameters.push(s);
     };
 
-    assert_eq!(lexer.next(), Some(Ok(Token::Assignment)));
+    assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
 
     let body = parse_expr(lexer, 0)?;
 
     Ok(Declaration::Function { name, parameters, body })
 }
 
-fn infix_binding_power(operator: char) -> Option<(u8, u8)> {
+fn infix_binding_power(operator: &str) -> Option<(u8, u8)> {
     match operator {
-        '+' | '-' => Some((5, 6)),
-        '*' | '/' => Some((7, 8)),
+        "+" | "-" => Some((5, 6)),
+        "*" | "/" => Some((7, 8)),
         _ => None
     }
+}
+
+fn parse_conditional(lexer: &mut PeekableLexer<'_>) -> Result<Expression, ParsingError> {
+    let condition = Box::new(parse_expr(lexer, 0)?);
+
+    assert_eq!(lexer.next(), Some(Ok(Token::Then)));
+
+    let first_path = Box::new(parse_expr(lexer, 0)?);
+
+    let mut second_path = None;
+    if matches!(lexer.peek(), Some(Ok(Token::Else))) {
+        lexer.next();
+        second_path = Some(Box::new(parse_expr(lexer, 0)?));
+    };
+
+    Ok(Expression::Conditional(condition, first_path, second_path))
 }
 
 #[derive(Debug)]

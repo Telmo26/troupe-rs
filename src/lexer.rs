@@ -18,14 +18,29 @@ pub enum Token {
     #[token("end")]
     End,
 
-    #[token("=")]
-    Assignment,
+    #[regex("andalso|orelse", |op| op.slice().to_owned())]
+    BooleanOperator(String),
 
-    #[regex(r"[+-]?([0-9]*\.?[0-9]+)", |num| num.slice().parse().ok())]
+    #[regex(r"[+\-\*\/\(\)]", |op| op.slice().to_owned())]
+    MathOperator(String),
+
+    #[token("=")]
+    EqualSign,
+
+    #[token("if")]
+    If,
+
+    #[token("then")]
+    Then,
+
+    #[token("else")]
+    Else,
+
+    #[regex(r"[0-9]*\.?[0-9]+", |num| num.slice().parse().ok())]
     Number(f64),
 
-    #[regex(r"[+\-\*\/\(\)]", |op| op.slice().chars().next().unwrap())]
-    Operator(char),
+    #[regex(r"(true|false)", |boolean| boolean.slice().parse().ok())]
+    Boolean(bool),
 
     #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_owned())]
     StringLiteral(String),
