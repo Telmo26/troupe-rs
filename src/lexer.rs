@@ -24,7 +24,7 @@ pub enum Token {
     #[regex(r"[+-]?([0-9]*\.?[0-9]+)", |num| num.slice().parse().ok())]
     Number(f64),
 
-    #[regex(r"/[+\-\*\/\(\)]", |op| op.slice().chars().next().unwrap())]
+    #[regex(r"[+\-\*\/\(\)]", |op| op.slice().chars().next().unwrap())]
     Operator(char),
 
     #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_owned())]

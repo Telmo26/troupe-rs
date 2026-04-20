@@ -1,8 +1,13 @@
 let 
     val deux = "bonjour"
     val test = deux
-    fun double n = 2
+    fun affine n = 3 + 2*n
 in
+    let
+        val affineTest = affine 5
+    in
+        print affineTest
+    end;
     print test;
     print deux
 end

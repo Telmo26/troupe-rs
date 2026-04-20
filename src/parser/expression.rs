@@ -5,8 +5,8 @@ pub enum Expression {
         body: Vec<Expression>,
     },
     FunctionCall {
-        name: String, 
-        parameters: Vec<Expression>
+        callee: Box<Expression>, 
+        argument: Box<Expression>
     },
     Operation(char, Vec<Expression>),
     Number(f64),
