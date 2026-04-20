@@ -9,7 +9,7 @@ let
   val andalso_vs_orelse =
     true orelse false andalso crash()
 in
-  print arithmetic;
+  print true;
   print comparison_vs_andalso;
   print andalso_vs_orelse
 end

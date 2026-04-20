@@ -12,19 +12,25 @@ pub enum Token {
     #[token("fun")]
     Fun,
 
-    #[token("in")]
+    #[token("in", priority=20)]
     In,
 
     #[token("end")]
     End,
 
-    #[regex(r"andalso|orelse|\+|-|\*|\\|\(|\)|<=|>=|<|>", |op| op.slice().to_owned(), priority=20)]
+    #[regex(r"andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_owned(), priority=20)]
     Operator(String),
+
+    #[token("(")]
+    LeftParenthesis,
+
+    #[token(")")]
+    RightParenthesis,
 
     #[token("=")]
     EqualSign,
 
-    #[token("if")]
+    #[token("if", priority=20)]
     If,
 
     #[token("then")]
@@ -32,6 +38,9 @@ pub enum Token {
 
     #[token("else")]
     Else,
+
+    #[token("()")]
+    Unit,
 
     #[regex(r"[0-9]*\.?[0-9]+", |num| num.slice().parse().ok())]
     Number(f64),
@@ -42,9 +51,12 @@ pub enum Token {
     #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_owned())]
     StringLiteral(String),
 
-    #[regex(r"[a-zA-Z\_]+", |id| id.slice().to_owned())]
+    #[regex(r"[a-zA-Z\_][a-zA-Z\_0-9]*", |id| id.slice().to_owned())]
     Identifier(String),
 
     #[token(";")]
     SemiColon,
+
+    #[token(",")]
+    Comma
 }

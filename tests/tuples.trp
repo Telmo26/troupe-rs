@@ -1,0 +1,8 @@
+let 
+    val test = (1, 2, true)
+    val test2 = (1 + 2, 3 * 4 = 12 andalso true)
+    fun test3 n = 2 * n
+in 
+    print (1, 2, true);
+    test3 4
+end
