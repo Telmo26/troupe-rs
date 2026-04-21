@@ -18,7 +18,7 @@ pub enum Token {
     #[token("end")]
     End,
 
-    #[regex(r"andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_owned(), priority=20)]
+    #[regex(r"raisedTo|andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_string(), priority=20)]
     Operator(String),
 
     #[token("(")]
@@ -48,11 +48,17 @@ pub enum Token {
     #[regex(r"true|false", |boolean| boolean.slice().parse().ok())]
     Boolean(bool),
 
-    #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_owned())]
+    #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_string())]
     StringLiteral(String),
 
     #[regex(r"[a-zA-Z\_][a-zA-Z\_0-9]*", |id| id.slice().to_owned())]
     Identifier(String),
+
+    #[regex(r"`\{[a-zA-Z]+\}`", |sl| sl.slice().trim_matches('`').to_string())]
+    SecurityLevel(String),
+
+    #[token("_", priority=3)]
+    Wildcard,
 
     #[token(";")]
     SemiColon,
