@@ -13,7 +13,7 @@ pub fn parse(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 }
 
 fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingError> {
-    // println!("Parsing expression: {:?}", lexer.peek());
+    println!("Parsing expression: {:?}", lexer.peek());
     let mut lhs = match lexer.next() {
         Some(Ok(token)) => match token {
                 t if is_value(&t) => parse_value(t),
@@ -28,8 +28,9 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                     let (name, value) = parse_function(lexer, true)?;
                     parse_declaration(lexer, name, value)?
                 },
+                Token::Case => parse_case(lexer)?,
                 Token::If => parse_conditional(lexer)?,
-                Token::LeftParenthesis => parse_tuple(lexer)?,
+                Token::LeftParenthesis => parse_parenthesis(lexer)?,
                 Token::Operator(op) if op == "-" => {
                     let (_, r_bp) = (0, 8);
                     let rhs = parse_expr(lexer, r_bp)?;
@@ -55,7 +56,7 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 break;
             } 
             
-            Some(Ok(Token::RightParenthesis)) | Some(Ok(Token::Comma)) => break,
+            Some(Ok(Token::RightParenthesis)) | Some(Ok(Token::Comma)) | Some(Ok(Token::Disjunction)) => break,
 
             Some(Ok(Token::Unit)) => {
                 lexer.next();
@@ -68,7 +69,7 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
 
             // This is for tuple variables
             Some(Ok(Token::LeftParenthesis)) => {
-                let argument = Box::new(parse_expr(lexer, 0)?);
+                let argument = Box::new(parse_expr(lexer, FUNCTION_CALL_BINDING_POWER)?);
                 lhs = AST::FunctionCall { callee: Box::new(lhs), argument };
                 continue;
             }
@@ -121,16 +122,6 @@ fn parse_let(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     };
 
     parse_declaration(lexer, name, value)
-    // assert_eq!(lexer.next(), Some(Ok(Token::In)));
-
-    // let mut body = Vec::new();
-    // while !matches!(lexer.peek(), Some(Ok(Token::End))) {
-    //     body.push(parse_expr(lexer, 0)?);
-    // }
-
-    // assert_eq!(lexer.next(), Some(Ok(Token::End)));
-
-    // Ok(AST::Let { declarations, body })
 }
 
 fn parse_declaration(lexer: &mut PeekableLexer<'_>, name: Pattern, value: AST) -> Result<AST, ParsingError> {
@@ -153,7 +144,7 @@ fn parse_variable(lexer: &mut PeekableLexer<'_>) -> Result<(Pattern, AST), Parsi
 
             let value = parse_expr(lexer, 0)?;
 
-            Ok((Pattern::Identifier(name), value))
+            Ok((Pattern::Single(Box::new(AST::Identifier(name))), value))
         },
 
         // This is pattern-matching
@@ -180,7 +171,8 @@ fn parse_function(lexer: &mut PeekableLexer<'_>, named: bool) -> Result<(Pattern
     // We get the function's name if it is named
     let name = if named {
         match lexer.next() {
-            Some(Ok(Token::Identifier(n))) => Pattern::Identifier(n),
+            Some(Ok(Token::Identifier(n))) => Pattern::Single(Box::new(AST::Identifier(n))),
+            Some(Ok(Token::Wildcard)) => Pattern::Empty,
             _ => return Err(ParsingError::InvalidSyntax),
         }
     } else { Pattern::Empty };
@@ -215,6 +207,7 @@ fn parse_function(lexer: &mut PeekableLexer<'_>, named: bool) -> Result<(Pattern
     }
 }
 
+const FUNCTION_CALL_BINDING_POWER: u8 = 13;
 fn infix_binding_power(operator: &str) -> Option<(u8, u8)> {
     match operator {
         "*" | "/" => Some((11, 12)),
@@ -243,8 +236,13 @@ fn parse_conditional(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError>
     Ok(AST::Conditional(condition, first_path, second_path))
 }
 
-fn parse_tuple(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
+fn parse_parenthesis(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     let lhs = parse_expr(lexer, 0)?;
+
+    if lexer.peek() == Some(&Ok(Token::RightParenthesis)) {
+        lexer.next();
+        return Ok(lhs)
+    }
 
     let mut expressions = vec![lhs];
     while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
@@ -255,6 +253,61 @@ fn parse_tuple(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
 
     Ok(AST::Tuple(expressions))
+}
+
+fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
+    let tested_expression = Box::new(parse_expr(lexer, 0)?);
+
+    assert_eq!(lexer.next(), Some(Ok(Token::Of)));
+
+    let mut patterns = vec![];
+    loop {
+        let pattern = match lexer.peek() {
+            Some(Ok(token)) => match token {
+                t if is_value(t) => {
+                    let value = lexer.next().unwrap().unwrap();
+                    Pattern::Single(Box::new(parse_value(value)))
+                }
+                Token::LeftParenthesis => {
+                    lexer.next();
+                    let mut expressions = vec![parse_expr(lexer, 0)?];
+                    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
+                        lexer.next(); // We go past the comma
+                        expressions.push(parse_expr(lexer, 0)?);
+                    }
+                    assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
+                    Pattern::Tuple(expressions)
+                }
+                _ => return Err(ParsingError::InvalidSyntax)
+            }
+            _ => return Err(ParsingError::InvalidSyntax)
+        };
+
+        assert_eq!(lexer.next(), Some(Ok(Token::Arrow)));
+
+        let expression = parse_expr(lexer, 0)?;
+
+        patterns.push((pattern, expression));
+
+        if matches!(lexer.peek(), Some(Ok(Token::Disjunction))) {
+            lexer.next(); // We go past the disjunction
+        } else {
+            break;
+        }
+    };
+
+    patterns.reverse();
+
+    let mut previous_turn = AST::Unit;
+    for (pattern, expression) in patterns {
+        previous_turn = AST::Conditional(
+            Box::new(AST::Match(pattern, tested_expression.clone())), 
+            Box::new(expression), 
+            if matches!(previous_turn, AST::Unit) { None } else { Some(Box::new(previous_turn)) }
+        );
+    };
+
+    Ok(previous_turn)
 }
 
 #[derive(Debug)]

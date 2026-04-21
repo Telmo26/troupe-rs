@@ -1,6 +1,6 @@
 // #![allow(dead_code)]
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AST {
     Let {
         name: Pattern,
@@ -12,6 +12,7 @@ pub enum AST {
         argument: Box<AST>
     },
     Operation(String, Vec<AST>),
+    Match(Pattern, Box<AST>),
     Conditional(Box<AST>, Box<AST>, Option<Box<AST>>),
     Tuple(Vec<AST>),
     
@@ -25,9 +26,9 @@ pub enum AST {
     SecurityLevel(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Pattern {
-    Identifier(String),
+    Single(Box<AST>),
     Tuple(Vec<AST>),
     Empty
 }

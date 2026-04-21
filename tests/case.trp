@@ -1,0 +1,7 @@
+let 
+    val test = case (1, 2, "test") of 
+        (a, 0, c) => a
+    |   (_, 2, "test") => 3
+in
+    print test
+end

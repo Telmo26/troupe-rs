@@ -1,6 +1,6 @@
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
 pub enum Token {
     #[token("let")]
@@ -51,11 +51,23 @@ pub enum Token {
     #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_string())]
     StringLiteral(String),
 
-    #[regex(r"[a-zA-Z\_][a-zA-Z\_0-9]*", |id| id.slice().to_owned())]
+    #[regex(r"[a-zA-Z\_]+[0-9]*", |id| id.slice().to_string())]
     Identifier(String),
 
     #[regex(r"`\{[a-zA-Z]+\}`", |sl| sl.slice().trim_matches('`').to_string())]
     SecurityLevel(String),
+
+    #[token("case")]
+    Case,
+
+    #[token("of")]
+    Of,
+
+    #[token("=>")]
+    Arrow,
+
+    #[token("|")]
+    Disjunction,
 
     #[token("_", priority=3)]
     Wildcard,
