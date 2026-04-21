@@ -18,7 +18,6 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
         Some(Ok(token)) => match token {
                 t if is_value(&t) => parse_value(t),
                 Token::Wildcard => return Ok(AST::Wildcard),
-                Token::In => return parse_expr(lexer, min_bp), // We just skip this call entirely
                 Token::Let => parse_let(lexer)?,
                 Token::Val => {
                     let (name, value) = parse_variable(lexer)?;
@@ -32,13 +31,14 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 Token::If => parse_conditional(lexer)?,
                 Token::LeftParenthesis => parse_parenthesis(lexer)?,
                 Token::LeftBracket => parse_list(lexer)?,
+                Token::Handler => parse_handler(lexer)?,
                 Token::Operator(op) if op == "-" => {
                     let (_, r_bp) = (0, 8);
                     let rhs = parse_expr(lexer, r_bp)?;
                     AST::Operation(op, vec![rhs])
                 }
                 _ => {
-                    println!("Parsing {token:?}");
+                    println!("Unknown token {token:?}");
                     return Err(ParsingError::InvalidSyntax)
                 }
         }
@@ -55,12 +55,7 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                     body: Box::new(parse_expr(lexer, 0)?)
                 };
                 break;
-            } 
-            
-            Some(Ok(Token::RightParenthesis)) 
-            | Some(Ok(Token::RightBracket))
-            | Some(Ok(Token::Comma)) 
-            | Some(Ok(Token::Disjunction)) => break,
+            }
 
             // For a function unit must be its only parameter
             Some(Ok(Token::Unit)) => {
@@ -113,7 +108,6 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
             
             _ => break,
         };
-
     }
 
     Ok(lhs)
@@ -130,7 +124,15 @@ fn parse_let(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 }
 
 fn parse_declaration(lexer: &mut PeekableLexer<'_>, name: Pattern, value: AST) -> Result<AST, ParsingError> {
+    if matches!(lexer.peek(), Some(Ok(Token::In))) {
+        lexer.next();
+    }
+
     let body = Box::new(parse_expr(lexer, 0)?);
+
+    if matches!(lexer.peek(), Some(Ok(Token::End))) {
+        lexer.next();
+    }
 
     Ok(AST::Let { 
         name, 
@@ -151,6 +153,14 @@ fn parse_variable(lexer: &mut PeekableLexer<'_>) -> Result<(Pattern, AST), Parsi
 
             Ok((Pattern::Single(Box::new(AST::Identifier(name))), value))
         },
+
+        Some(Ok(Token::Wildcard)) => {
+            assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
+
+            let value = parse_expr(lexer, 0)?;
+
+            Ok((Pattern::Empty, value))
+        }
 
         // This is pattern-matching
         Some(Ok(Token::LeftParenthesis)) => {
@@ -315,6 +325,23 @@ fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     Ok(previous_turn)
 }
 
+fn parse_pattern(lexer: &mut PeekableLexer<'_>) -> Result<Pattern, ParsingError> {
+    let mut expressions = vec![parse_expr(lexer, 0)?];
+    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
+        lexer.next();
+        expressions.push(parse_expr(lexer, 0)?);
+    }
+
+    assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
+
+    if expressions.len() == 1 {
+        let exp = expressions.drain(0..1).next().unwrap();
+        Ok(Pattern::Single(Box::new(exp)))
+    } else {
+        Ok(Pattern::Tuple(expressions))
+    }
+}
+
 fn parse_list(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     let mut expressions = vec![parse_expr(lexer, 0)?];
 
@@ -326,6 +353,54 @@ fn parse_list(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     assert_eq!(lexer.next(), Some(Ok(Token::RightBracket)));
 
     Ok(AST::List(expressions))
+}
+
+fn parse_handler(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
+    let pattern = match lexer.peek() {
+        Some(Ok(Token::LeftParenthesis)) => {
+            lexer.next();
+            parse_pattern(lexer)?
+        }
+        Some(Ok(Token::Identifier(_))) => {
+            let Some(Ok(Token::Identifier(s))) = lexer.next() else { unreachable!() };
+            Pattern::Single(Box::new(AST::Identifier(s)))
+        }
+        _ => return Err(ParsingError::InvalidSyntax)
+    };
+
+    let guard = if matches!(lexer.peek(), Some(Ok(Token::When))) {
+        lexer.next();
+        Some(parse_expr(lexer, 0)?)
+    } else { None };
+
+    assert_eq!(lexer.next(), Some(Ok(Token::Arrow)));
+
+    let body = parse_expr(lexer, 0)?;
+
+    let condition = if let Some(when_guard) = guard {
+        AST::Conditional(
+            Box::new(AST::Operation(
+                "andalso".to_string(), 
+                vec![
+                    AST::Match(pattern, Box::new(AST::Identifier("input".to_string()))), 
+                    when_guard
+                ]
+            )), 
+            Box::new(body), 
+            None
+        )
+    } else {
+        AST::Conditional(
+            Box::new(AST::Match(
+                pattern, 
+                Box::new(AST::Identifier("input".to_string()))),
+            ), 
+            Box::new(body), 
+            None
+        )
+    };
+
+    Ok(AST::Lambda(Some("input".to_string()), Box::new(condition)))
 }
 
 #[derive(Debug)]

@@ -75,6 +75,12 @@ pub enum Token {
     #[token("]")]
     RightBracket,
 
+    #[token("hn")]
+    Handler,
+
+    #[token("when")]
+    When,
+
     #[token("_", priority=3)]
     Wildcard,
 
