@@ -81,6 +81,9 @@ pub enum Token {
     #[token("when")]
     When,
 
+    #[token("fn")]
+    Fn,
+
     #[token("_", priority=3)]
     Wildcard,
 
@@ -88,5 +91,8 @@ pub enum Token {
     SemiColon,
 
     #[token(",")]
-    Comma
+    Comma,
+
+    #[token("import")]
+    Import
 }

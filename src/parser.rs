@@ -17,6 +17,10 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
     let mut lhs = match lexer.next() {
         Some(Ok(token)) => match token {
                 t if is_value(&t) => parse_value(t),
+                Token::Import => {
+                    lexer.next(); // We ignore the imported module
+                    return parse_expr(lexer, min_bp)
+                }
                 Token::Wildcard => return Ok(AST::Wildcard),
                 Token::Let => parse_let(lexer)?,
                 Token::Val => {
@@ -27,6 +31,10 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                     let (name, value) = parse_function(lexer, true)?;
                     parse_declaration(lexer, name, value)?
                 },
+                Token::Fn => {
+                    let (_, value) = parse_function(lexer, false)?;
+                    value
+                }
                 Token::Case => parse_case(lexer)?,
                 Token::If => parse_conditional(lexer)?,
                 Token::LeftParenthesis => parse_parenthesis(lexer)?,
@@ -212,7 +220,7 @@ fn parse_function(lexer: &mut PeekableLexer<'_>, named: bool) -> Result<(Pattern
         }
 
         // Otherwise we simply compute the body
-        Some(Ok(Token::EqualSign)) => {
+        Some(Ok(Token::EqualSign)) | Some(Ok(Token::Arrow)) => {
             lexer.next();
             let body = Box::new(parse_expr(lexer, 0)?);
             Ok((name, AST::Lambda(variable, body)))
