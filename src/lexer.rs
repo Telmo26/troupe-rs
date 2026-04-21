@@ -69,6 +69,12 @@ pub enum Token {
     #[token("|")]
     Disjunction,
 
+    #[token("[")]
+    LeftBracket,
+
+    #[token("]")]
+    RightBracket,
+
     #[token("_", priority=3)]
     Wildcard,
 

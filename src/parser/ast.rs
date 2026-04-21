@@ -15,6 +15,7 @@ pub enum AST {
     Match(Pattern, Box<AST>),
     Conditional(Box<AST>, Box<AST>, Option<Box<AST>>),
     Tuple(Vec<AST>),
+    List(Vec<AST>),
     
     Unit,
     Wildcard,

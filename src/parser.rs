@@ -31,6 +31,7 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 Token::Case => parse_case(lexer)?,
                 Token::If => parse_conditional(lexer)?,
                 Token::LeftParenthesis => parse_parenthesis(lexer)?,
+                Token::LeftBracket => parse_list(lexer)?,
                 Token::Operator(op) if op == "-" => {
                     let (_, r_bp) = (0, 8);
                     let rhs = parse_expr(lexer, r_bp)?;
@@ -56,8 +57,12 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 break;
             } 
             
-            Some(Ok(Token::RightParenthesis)) | Some(Ok(Token::Comma)) | Some(Ok(Token::Disjunction)) => break,
+            Some(Ok(Token::RightParenthesis)) 
+            | Some(Ok(Token::RightBracket))
+            | Some(Ok(Token::Comma)) 
+            | Some(Ok(Token::Disjunction)) => break,
 
+            // For a function unit must be its only parameter
             Some(Ok(Token::Unit)) => {
                 lexer.next();
                 lhs = AST::FunctionCall { 
@@ -67,8 +72,8 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 break;
             }
 
-            // This is for tuple variables
-            Some(Ok(Token::LeftParenthesis)) => {
+            // This is for tuple or list function parameters
+            Some(Ok(Token::LeftParenthesis)) | Some(Ok(Token::LeftBracket)) => {
                 let argument = Box::new(parse_expr(lexer, FUNCTION_CALL_BINDING_POWER)?);
                 lhs = AST::FunctionCall { callee: Box::new(lhs), argument };
                 continue;
@@ -308,6 +313,19 @@ fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
     };
 
     Ok(previous_turn)
+}
+
+fn parse_list(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
+    let mut expressions = vec![parse_expr(lexer, 0)?];
+
+    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
+        lexer.next();
+        expressions.push(parse_expr(lexer, 0)?);
+    };
+
+    assert_eq!(lexer.next(), Some(Ok(Token::RightBracket)));
+
+    Ok(AST::List(expressions))
 }
 
 #[derive(Debug)]
