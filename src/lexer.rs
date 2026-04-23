@@ -2,6 +2,7 @@ use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
+#[logos(skip r"\(\*[a-zA-Z0-9 ]*\*\)")]
 pub enum Token {
     #[token("let")]
     Let,
@@ -18,7 +19,7 @@ pub enum Token {
     #[token("end")]
     End,
 
-    #[regex(r"raisedTo|andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_string(), priority=20)]
+    #[regex(r"::|raisedTo|andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_string(), priority=20)]
     Operator(String),
 
     #[token("(")]
@@ -94,5 +95,5 @@ pub enum Token {
     Comma,
 
     #[token("import")]
-    Import
+    Import,
 }

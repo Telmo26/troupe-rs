@@ -1,3 +1,5 @@
+(* This is comment that should not be captured by the lexer*)
+
 let 
     fun timeout p r t = 
         let 
@@ -8,6 +10,7 @@ let
     val p = self ()
     val r = mkuuid ()
     val _ = spawn (fn () => timeout p r 1000)
+    val data = p :: []
 in 
     receive [ hn ("MESSAGE", x) => print x
             , hn s when s = r => print "timeout"

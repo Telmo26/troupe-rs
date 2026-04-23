@@ -238,7 +238,7 @@ fn infix_binding_power(operator: &str) -> Option<(u8, u8)> {
         "=" | "<=" | ">=" | "<" | ">" => Some((7, 8)),
         "andalso" => Some((5, 6)),
         "orelse" => Some((3, 4)),
-        "raisedTo" => Some((1, 2)),
+        "raisedTo" | "::" => Some((1, 2)),
         _ => None
     }
 }
@@ -351,12 +351,15 @@ fn parse_pattern(lexer: &mut PeekableLexer<'_>) -> Result<Pattern, ParsingError>
 }
 
 fn parse_list(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
-    let mut expressions = vec![parse_expr(lexer, 0)?];
+    let mut expressions = vec![];
 
-    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
-        lexer.next();
-        expressions.push(parse_expr(lexer, 0)?);
-    };
+    if lexer.peek() != Some(&Ok(Token::RightBracket)) {
+        loop {
+            expressions.push(parse_expr(lexer, 0)?);          
+            if lexer.peek() != Some(&Ok(Token::Comma)) { break; }
+            lexer.next();
+        }
+    }
 
     assert_eq!(lexer.next(), Some(Ok(Token::RightBracket)));
 
