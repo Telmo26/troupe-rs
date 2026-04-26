@@ -8,6 +8,8 @@ let
 
   val andalso_vs_orelse =
     true orelse false andalso crash()
+
+  val negative = -(2 + 3)
 in
   print true;
   print comparison_vs_andalso;

@@ -41,8 +41,7 @@ fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingE
                 Token::LeftBracket => parse_list(lexer)?,
                 Token::Handler => parse_handler(lexer)?,
                 Token::Operator(op) if op == "-" => {
-                    let (_, r_bp) = (0, 8);
-                    let rhs = parse_expr(lexer, r_bp)?;
+                    let rhs = parse_expr(lexer, 0)?;
                     AST::Operation(op, vec![rhs])
                 }
                 _ => {
