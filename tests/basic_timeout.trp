@@ -1,5 +1,5 @@
-(* This is comment that should not be captured by the lexer*)
-
+(* This is a comment that should not be captured by the lexer *)
+(* Comment (* nesting *) should work too *)
 let 
     fun timeout p r t = 
         let 

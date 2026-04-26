@@ -12,7 +12,7 @@ pub enum AST {
         argument: Box<AST>
     },
     Operation(String, Vec<AST>),
-    Match(Pattern, Box<AST>),
+    Case(Box<AST>, Vec<MatchClause>),
     Conditional(Box<AST>, Box<AST>, Option<Box<AST>>),
     Tuple(Vec<AST>),
     List(Vec<AST>),
@@ -30,6 +30,13 @@ pub enum AST {
 #[derive(Debug, Clone)]
 pub enum Pattern {
     Single(Box<AST>),
-    Tuple(Vec<AST>),
+    Tuple(Vec<Pattern>),
     Empty
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchClause {
+    pub pattern: Pattern,
+    pub guard: Option<AST>,
+    pub body: AST
 }
