@@ -1,4 +1,4 @@
-// #![allow(dead_code)]
+#![allow(dead_code)]
 
 #[derive(Debug, Clone)]
 pub enum AST {
@@ -6,17 +6,18 @@ pub enum AST {
         name: Pattern,
         value: Box<AST>,
         body: Box<AST>,
+        rec: bool,
     },
     FunctionCall {
-        callee: Box<AST>, 
-        argument: Box<AST>
+        callee: Box<AST>,
+        argument: Box<AST>,
     },
     Operation(String, Vec<AST>),
     Match(Pattern, Box<AST>),
     Conditional(Box<AST>, Box<AST>, Option<Box<AST>>),
     Tuple(Vec<AST>),
     List(Vec<AST>),
-    
+
     Unit,
     Wildcard,
     Number(f64),
@@ -31,5 +32,5 @@ pub enum AST {
 pub enum Pattern {
     Single(Box<AST>),
     Tuple(Vec<AST>),
-    Empty
+    Empty,
 }
