@@ -97,3 +97,9 @@ pub enum Token {
     #[token("import")]
     Import,
 }
+
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        format!("{:?}", self).to_owned()
+    }
+}

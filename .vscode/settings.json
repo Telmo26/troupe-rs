@@ -1,7 +1,5 @@
 {
     "files.associations": {
-        "*.ml": "sml",
-        "*.sml": "sml",
-        "*.cs": "sml"
+        "*.trp": "sml",
     }
 }
