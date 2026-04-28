@@ -13,7 +13,7 @@ pub fn parse(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 }
 
 fn parse_expr(lexer: &mut PeekableLexer<'_>, min_bp: u8) -> Result<AST, ParsingError> {
-    println!("Parsing expression: {:?}", lexer.peek());
+    // println!("Parsing expression: {:?}", lexer.peek());
     let mut lhs = match lexer.next() {
         Some(Ok(token)) => match token {
             t if is_value(&t) => parse_value(t),
@@ -162,7 +162,7 @@ fn parse_declaration(
 }
 
 fn parse_variable(lexer: &mut PeekableLexer<'_>) -> Result<(Pattern, AST), ParsingError> {
-    println!("Parsing variable: {:?}", lexer.peek());
+    // println!("Parsing variable: {:?}", lexer.peek());
 
     match lexer.peek() {
         // This is the normal assignment or pattern-matching
@@ -192,7 +192,7 @@ fn parse_function(
     lexer: &mut PeekableLexer<'_>,
     named: bool,
 ) -> Result<(Pattern, AST), ParsingError> {
-    println!("Parsing function: {:?}", lexer.peek());
+    // println!("Parsing function: {:?}", lexer.peek());
     // We get the function's name if it is named
     let name = if named {
         match lexer.next() {
@@ -321,7 +321,7 @@ fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 }
 
 fn parse_pattern(lexer: &mut PeekableLexer<'_>) -> Result<Pattern, ParsingError> {
-    println!("Parsing pattern : {:?}", lexer.peek());
+    // println!("Parsing pattern : {:?}", lexer.peek());
     match lexer.peek() {
         Some(Ok(Token::LeftParenthesis)) => {
             lexer.next();

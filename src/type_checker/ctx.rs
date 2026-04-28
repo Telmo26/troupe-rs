@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     parser::{Pattern, AST},
-    type_checker::{scheme::Scheme, types::Type, Constraint},
+    type_checker::{deep_substitute, scheme::Scheme, types::Type, Constraint},
 };
 
 pub struct Ctx {
@@ -28,44 +28,40 @@ impl Ctx {
         let t = match s {
             "authority" => Type::Authority,
             "exitAfterTimeout" => Type::Lambda(
-                Box::new(Scheme::authority()),
-                Box::new(Scheme::empty(Type::Lambda(
-                    Box::new(Scheme::int()),
-                    Box::new(Scheme::empty(Type::Lambda(
-                        Box::new(Scheme::int()),
-                        Box::new(Scheme::empty(Type::Lambda(
-                            Box::new(Scheme::string()),
-                            Box::new(Scheme::unit()),
-                        ))),
-                    ))),
-                ))),
+                Box::new(Type::Authority),
+                Box::new(Type::Lambda(
+                    Box::new(Type::Int),
+                    Box::new(Type::Lambda(
+                        Box::new(Type::Int),
+                        Box::new(Type::Lambda(Box::new(Type::String), Box::new(Type::Unit))),
+                    )),
+                )),
             ),
-            "sleep" => Type::Lambda(Box::new(Scheme::int()), Box::new(Scheme::unit())),
-            "send" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Scheme::unit())),
+            "sleep" => Type::Lambda(Box::new(Type::Int), Box::new(Type::Unit)),
+            "send" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
             "receive" => Type::Lambda(
-                Box::new(Scheme::empty(Type::List(Box::new(Scheme::empty(
-                    Type::Unit,
-                ))))),
+                Box::new(Type::List(Box::new(Type::Unit))),
                 Box::new(self.get_fresh()),
             ),
-            "self" | "mkuuid" => Type::Lambda(Box::new(Scheme::unit()), Box::new(Scheme::int())),
+            "self" | "mkuuid" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Int)),
             "spawn" => Type::Lambda(
-                Box::new(Scheme::empty(Type::Lambda(
-                    Box::new(Scheme::unit()),
+                Box::new(Type::Lambda(
+                    Box::new(Type::Unit),
                     Box::new(self.get_fresh()),
-                ))),
-                Box::new(Scheme::int()),
+                )),
+                Box::new(Type::Int),
             ),
-            "print" => Type::Lambda(Box::new(Scheme::string()), Box::new(Scheme::unit())),
+            "print" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
+            "crash" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Unit)),
             _ => return None,
         };
 
-        Some(Scheme::empty(t))
+        Some(self.generalize(t))
     }
 
-    pub fn get_fresh(&mut self) -> Scheme {
+    pub fn get_fresh(&mut self) -> Type {
         self.fresh += 1;
-        Scheme::get_gen(self.fresh - 1)
+        Type::Gen(self.fresh - 1)
     }
 
     pub fn insert(&mut self, var: String, t: Scheme) {
@@ -80,24 +76,30 @@ impl Ctx {
         self.name_map.get(var)
     }
 
-    pub fn insert_new_variable(&mut self, var: &Pattern, t: Scheme) {
+    pub fn insert_new_variable_with_set(&mut self, var: &Pattern, t: Type, free_vars: &[u32]) {
         match var {
             Pattern::Single(child) => match &child as &AST {
-                AST::Identifier(name) => self.insert(name.to_owned(), t),
+                AST::Identifier(name) => {
+                    self.insert(name.to_owned(), Scheme::new(t, free_vars.to_vec()))
+                }
                 _ => (),
             },
             Pattern::Tuple(variables) => {
                 let fresh_types: Vec<_> = variables.iter().map(|_| self.get_fresh()).collect();
 
-                self.constraints
-                    .push((t, Scheme::empty(Type::Tuple(fresh_types.clone()))));
+                self.constraints.push((t, Type::Tuple(fresh_types.clone())));
 
                 for (var, t) in variables.iter().zip(fresh_types) {
-                    self.insert_new_variable(var, t);
+                    self.insert_new_variable_with_set(var, t, free_vars);
                 }
             }
             _ => (),
         };
+    }
+
+    pub fn insert_new_variable(&mut self, var: &Pattern, t: Type) {
+        let free_variables = self.get_free_variables(&t);
+        self.insert_new_variable_with_set(var, t, &free_variables);
     }
 
     pub fn remove_variable(&mut self, var: &Pattern) {
@@ -119,5 +121,42 @@ impl Ctx {
 
     pub fn drop_constraints(self) -> Vec<Constraint> {
         self.constraints
+    }
+
+    pub fn instanciate(&mut self, Scheme { vars, mut ty }: Scheme) -> Type {
+        for variable in vars {
+            deep_substitute(&mut ty, &Type::Gen(variable), &self.get_fresh());
+        }
+        ty
+    }
+
+    pub fn get_context_free_variables(&self) -> HashSet<u32> {
+        let mut result = HashSet::new();
+
+        for scheme in self.name_map.values() {
+            let mut fv = scheme.ty.get_free_variables();
+
+            for v in &scheme.vars {
+                fv.remove(v);
+            }
+
+            result.extend(fv);
+        }
+
+        result
+    }
+
+    pub fn get_free_variables(&self, t: &Type) -> Vec<u32> {
+        let context_variables = self.get_context_free_variables();
+        let free_variables = t.get_free_variables();
+        free_variables
+            .into_iter()
+            .filter(|x| !context_variables.contains(x))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn generalize(&self, t: Type) -> Scheme {
+        let set = self.get_free_variables(&t);
+        Scheme::new(t, set)
     }
 }

@@ -7,18 +7,18 @@ use crate::{
     type_checker::{ctx::Ctx, scheme::Scheme, types::Type},
 };
 
-pub type Constraint = (Scheme, Scheme);
+pub type Constraint = (Type, Type);
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum TypeError {
     UnknownVariable(String),
     InvalidOperator(String),
-    TypeMismatchConstraint(Scheme, Scheme),
+    TypeMismatchConstraint(Type, Type),
     TypeCycle,
 }
 
-fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
+fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
     Ok(match ast {
         AST::Let {
             name,
@@ -27,16 +27,16 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
             rec,
         } => match name {
             Pattern::Single(_) => {
-                let t = if *rec {
+                if *rec {
                     let rec_gen = ctx.get_fresh();
                     ctx.insert_new_variable(&name, rec_gen.clone());
                     let t = get_type_constraints(value, ctx)?;
                     ctx.push_constraint((rec_gen, t.clone()));
-                    t
+                    ctx.insert_new_variable(&name, t);
                 } else {
-                    get_type_constraints(value, ctx)?
+                    let t = get_type_constraints(value, ctx)?;
+                    ctx.insert_new_variable_with_set(&name, t, &[]);
                 };
-                ctx.insert_new_variable(&name, t);
                 let res = get_type_constraints(body, ctx)?;
                 ctx.remove_variable(&name);
                 res
@@ -65,10 +65,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
             ctx.push_constraint((t_arg, arg_fresh.clone()));
             ctx.push_constraint((
                 t_callee,
-                Scheme::empty(Type::Lambda(
-                    Box::new(arg_fresh),
-                    Box::new(res_fresh.clone()),
-                )),
+                Type::Lambda(Box::new(arg_fresh), Box::new(res_fresh.clone())),
             ));
 
             res_fresh
@@ -77,28 +74,28 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
             let (expected, res) = match &op as &str {
                 "raisedTo" => {
                     let fresh = ctx.get_fresh();
-                    (vec![fresh.clone(), Scheme::label()], fresh)
+                    (vec![fresh.clone(), Type::Label], fresh)
                 }
-                "andalso" => (vec![Scheme::bool(); 2], Scheme::bool()),
-                "orelse" => (vec![Scheme::bool(); 2], Scheme::bool()),
-                "+" => (vec![Scheme::int(); 2], Scheme::int()),
-                "-" => (vec![Scheme::int(); 2], Scheme::int()),
-                "*" => (vec![Scheme::int(); 2], Scheme::int()),
-                "/" => (vec![Scheme::int(); 2], Scheme::int()),
-                "<=" => (vec![Scheme::int(); 2], Scheme::bool()),
+                "andalso" => (vec![Type::Bool; 2], Type::Bool),
+                "orelse" => (vec![Type::Bool; 2], Type::Bool),
+                "+" => (vec![Type::Int; 2], Type::Int),
+                "-" => (vec![Type::Int; 2], Type::Int),
+                "*" => (vec![Type::Int; 2], Type::Int),
+                "/" => (vec![Type::Int; 2], Type::Int),
+                "<=" => (vec![Type::Int; 2], Type::Bool),
                 "=" => {
                     let t1 = ctx.get_fresh();
                     let t2 = ctx.get_fresh();
                     ctx.push_constraint((t1.clone(), t2.clone()));
-                    (vec![t1, t2], Scheme::bool())
+                    (vec![t1, t2], Type::Bool)
                 }
-                ">=" => (vec![Scheme::int(); 2], Scheme::bool()),
-                "<" => (vec![Scheme::int(); 2], Scheme::bool()),
-                "=>" => (vec![Scheme::int(); 2], Scheme::bool()),
-                ">" => (vec![Scheme::int(); 2], Scheme::bool()),
+                ">=" => (vec![Type::Int; 2], Type::Bool),
+                "<" => (vec![Type::Int; 2], Type::Bool),
+                "!=" => (vec![Type::Int; 2], Type::Bool),
+                ">" => (vec![Type::Int; 2], Type::Bool),
                 "::" => {
                     let t = ctx.get_fresh();
-                    let list = Scheme::empty(Type::List(Box::new(t.clone())));
+                    let list = Type::List(Box::new(t.clone()));
                     (vec![t, list.clone()], list)
                 }
                 _ => return Err(TypeError::InvalidOperator(op.to_string())),
@@ -119,7 +116,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
             let t_expr = match expr.as_ref() {
                 AST::Identifier(name) if name == "_handlerInput" => {
                     let t = ctx.get_fresh();
-                    ctx.insert(name.clone(), t.clone());
+                    ctx.insert(name.clone(), ctx.generalize(t.clone())); // Binding
                     t
                 }
                 _ => get_type_constraints(expr, ctx)?,
@@ -128,11 +125,11 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
             let t_result = ctx.get_fresh();
 
             for clause in clauses {
-                ctx.insert_new_variable(&clause.pattern, t_expr.clone());
+                ctx.insert_new_variable_with_set(&clause.pattern, t_expr.clone(), &[]);
 
                 if let Some(guard) = &clause.guard {
                     let t_guard = get_type_constraints(guard, ctx)?;
-                    ctx.push_constraint((t_guard, Scheme::bool()));
+                    ctx.push_constraint((t_guard, Type::Bool));
                 }
 
                 let t_body = get_type_constraints(&clause.body, ctx)?;
@@ -145,14 +142,14 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
         }
         AST::Conditional(ife, then, els) => {
             let t1 = get_type_constraints(ife, ctx)?;
-            ctx.push_constraint((t1, Scheme::bool()));
+            ctx.push_constraint((t1, Type::Bool));
 
             let t2 = get_type_constraints(then, ctx)?;
 
             let t3 = if let Some(els) = els {
                 get_type_constraints(els, ctx)?
             } else {
-                Scheme::unit()
+                Type::Unit
             };
 
             ctx.push_constraint((t2.clone(), t3));
@@ -164,11 +161,9 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
                 types.push(get_type_constraints(v, ctx)?);
             }
 
-            Scheme::empty(Type::Tuple(types))
+            Type::Tuple(types)
         }
-        AST::List(values) if values.is_empty() => {
-            Scheme::empty(Type::List(Box::new(ctx.get_fresh())))
-        }
+        AST::List(values) if values.is_empty() => Type::List(Box::new(ctx.get_fresh())),
         AST::List(values) => {
             let t1 = get_type_constraints(&values[0], ctx)?;
 
@@ -177,15 +172,15 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
                 ctx.push_constraint((t1.clone(), t2));
             }
 
-            Scheme::empty(Type::List(Box::new(t1)))
+            Type::List(Box::new(t1))
         }
         AST::Lambda(arg, body) => {
             let (t1, to_remove) = if let Some(arg) = arg {
                 let t1 = ctx.get_fresh();
-                ctx.insert(arg.to_string(), t1.clone());
+                ctx.insert(arg.to_string(), Scheme::empty(t1.clone()));
                 (t1, Some(arg.to_string()))
             } else {
-                (Scheme::unit(), None)
+                (Type::Unit, None)
             };
 
             let t2 = get_type_constraints(body, ctx)?;
@@ -193,32 +188,32 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Scheme, TypeError> {
                 ctx.remove(&arg);
             }
 
-            Scheme::empty(Type::Lambda(Box::new(t1), Box::new(t2)))
+            Type::Lambda(Box::new(t1), Box::new(t2))
         }
-        AST::Unit => Scheme::unit(),
-        AST::Wildcard => Scheme::wildcard(),
-        AST::Number(_) => Scheme::int(),
-        AST::StringLiteral(_) => Scheme::string(),
-        AST::Boolean(_) => Scheme::bool(),
+        AST::Unit => Type::Unit,
+        AST::Wildcard => Type::Wildcard,
+        AST::Number(_) => Type::Int,
+        AST::StringLiteral(_) => Type::String,
+        AST::Boolean(_) => Type::Bool,
         AST::Identifier(ident) => match ctx
             .get(ident)
             .cloned()
             .or_else(|| ctx.get_builtin_type(ident))
         {
-            Some(t) => t,
+            Some(scheme) => ctx.instanciate(scheme),
             None => return Err(TypeError::UnknownVariable(ident.to_string())),
         },
-        AST::SecurityLevel(_) => Scheme::empty(Type::Label),
+        AST::SecurityLevel(_) => Type::Label,
     })
 }
 
-fn deep_substitute(current: &mut Scheme, from: &Scheme, to: &Scheme) {
+pub fn deep_substitute(current: &mut Type, from: &Type, to: &Type) {
     if current == from {
         *current = to.clone();
         return;
     }
 
-    match &mut current.ty {
+    match current {
         Type::Lambda(t1, t2) => {
             deep_substitute(t1, from, to);
             deep_substitute(t2, from, to);
@@ -233,11 +228,11 @@ fn deep_substitute(current: &mut Scheme, from: &Scheme, to: &Scheme) {
     }
 }
 
-fn type_contains(t1: &Scheme, t2: &Scheme) -> bool {
+fn type_contains(t1: &Type, t2: &Type) -> bool {
     if t1 == t2 {
         true
     } else {
-        match &t1.ty {
+        match t1 {
             Type::Lambda(from, to) => type_contains(&from, t2) || type_contains(&to, t2),
             Type::List(t) => type_contains(&t, t2),
             Type::Tuple(types) => types.iter().any(|t| type_contains(t, t2)),
@@ -247,8 +242,8 @@ fn type_contains(t1: &Scheme, t2: &Scheme) -> bool {
 }
 
 fn process_substitution(
-    t: &Scheme,
-    g: &Scheme,
+    t: &Type,
+    g: &Type,
     constraints: &mut Vec<Constraint>,
 ) -> Result<(), TypeError> {
     if type_contains(t, g) {
@@ -265,7 +260,7 @@ fn process_substitution(
 fn resolve_constraints(mut constraints: Vec<Constraint>) -> Result<(), TypeError> {
     constraints.reverse();
     while let Some((t1, t2)) = constraints.pop() {
-        match (&t1.ty, &t2.ty) {
+        match (&t1, &t2) {
             (t1, t2) if t1 == t2 => continue,
             (Type::Lambda(a1, b1), Type::Lambda(a2, b2)) => {
                 constraints.push((*a1.clone(), *a2.clone()));
@@ -291,5 +286,6 @@ fn resolve_constraints(mut constraints: Vec<Constraint>) -> Result<(), TypeError
 pub fn type_check(ast: AST) -> Result<(), TypeError> {
     let mut ctx = Ctx::new();
     get_type_constraints(&ast, &mut ctx)?;
-    resolve_constraints(ctx.drop_constraints())
+    let constraints = ctx.drop_constraints();
+    resolve_constraints(constraints)
 }
