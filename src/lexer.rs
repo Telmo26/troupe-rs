@@ -2,7 +2,7 @@ use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
-#[logos(skip r"\(\*[a-zA-Z0-9 ]*\*\)")]
+#[logos(skip r"\(\*[ a-zA-Z0-9\(\*\*\)]*\*\)")]
 pub enum Token {
     #[token("let")]
     Let,

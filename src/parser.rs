@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::{lexer::Token, parser::ast::MatchClause};
 
 mod ast;
 pub use ast::{Pattern, AST};
@@ -164,38 +164,25 @@ fn parse_declaration(
 fn parse_variable(lexer: &mut PeekableLexer<'_>) -> Result<(Pattern, AST), ParsingError> {
     println!("Parsing variable: {:?}", lexer.peek());
 
-    match lexer.next() {
-        // This is the normal assignment
-        Some(Ok(Token::Identifier(name))) => {
+    match lexer.peek() {
+        // This is the normal assignment or pattern-matching
+        Some(Ok(Token::Identifier(_))) | Some(Ok(Token::LeftParenthesis)) => {
+            let pattern = parse_pattern(lexer)?;
+
             assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
 
             let value = parse_expr(lexer, 0)?;
 
-            Ok((Pattern::Single(Box::new(AST::Identifier(name))), value))
+            Ok((pattern, value))
         }
 
         Some(Ok(Token::Wildcard)) => {
+            lexer.next();
             assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
 
             let value = parse_expr(lexer, 0)?;
 
             Ok((Pattern::Empty, value))
-        }
-
-        // This is pattern-matching
-        Some(Ok(Token::LeftParenthesis)) => {
-            let mut expressions = vec![parse_expr(lexer, 0)?];
-            while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
-                lexer.next();
-                expressions.push(parse_expr(lexer, 0)?);
-            }
-
-            assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
-            assert_eq!(lexer.next(), Some(Ok(Token::EqualSign)));
-
-            let value = parse_expr(lexer, 0)?;
-
-            Ok((Pattern::Tuple(expressions), value))
         }
         _ => return Err(ParsingError::InvalidSyntax),
     }
@@ -298,38 +285,30 @@ fn parse_parenthesis(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError>
 }
 
 fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
-    let tested_expression = Box::new(parse_expr(lexer, 0)?);
+    let expression = Box::new(parse_expr(lexer, 0)?);
 
     assert_eq!(lexer.next(), Some(Ok(Token::Of)));
 
-    let mut patterns = vec![];
+    let mut clauses: Vec<MatchClause> = vec![];
     loop {
-        let pattern = match lexer.peek() {
-            Some(Ok(token)) => match token {
-                t if is_value(t) => {
-                    let value = lexer.next().unwrap().unwrap();
-                    Pattern::Single(Box::new(parse_value(value)))
-                }
-                Token::LeftParenthesis => {
-                    lexer.next();
-                    let mut expressions = vec![parse_expr(lexer, 0)?];
-                    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
-                        lexer.next(); // We go past the comma
-                        expressions.push(parse_expr(lexer, 0)?);
-                    }
-                    assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
-                    Pattern::Tuple(expressions)
-                }
-                _ => return Err(ParsingError::InvalidSyntax),
-            },
-            _ => return Err(ParsingError::InvalidSyntax),
+        let pattern = parse_pattern(lexer)?;
+
+        let guard = if lexer.peek() == Some(&Ok(Token::When)) {
+            lexer.next();
+            Some(parse_expr(lexer, 0)?)
+        } else {
+            None
         };
 
         assert_eq!(lexer.next(), Some(Ok(Token::Arrow)));
 
-        let expression = parse_expr(lexer, 0)?;
+        let body = parse_expr(lexer, 0)?;
 
-        patterns.push((pattern, expression));
+        clauses.push(MatchClause {
+            pattern,
+            guard,
+            body,
+        });
 
         if matches!(lexer.peek(), Some(Ok(Token::Disjunction))) {
             lexer.next(); // We go past the disjunction
@@ -338,38 +317,32 @@ fn parse_case(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
         }
     }
 
-    patterns.reverse();
-
-    let mut previous_turn = AST::Unit;
-    for (pattern, expression) in patterns {
-        previous_turn = AST::Conditional(
-            Box::new(AST::Match(pattern, tested_expression.clone())),
-            Box::new(expression),
-            if matches!(previous_turn, AST::Unit) {
-                None
-            } else {
-                Some(Box::new(previous_turn))
-            },
-        );
-    }
-
-    Ok(previous_turn)
+    Ok(AST::Case(expression, clauses))
 }
 
 fn parse_pattern(lexer: &mut PeekableLexer<'_>) -> Result<Pattern, ParsingError> {
-    let mut expressions = vec![parse_expr(lexer, 0)?];
-    while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
-        lexer.next();
-        expressions.push(parse_expr(lexer, 0)?);
-    }
+    println!("Parsing pattern : {:?}", lexer.peek());
+    match lexer.peek() {
+        Some(Ok(Token::LeftParenthesis)) => {
+            lexer.next();
+            let mut patterns = vec![parse_pattern(lexer)?];
+            while matches!(lexer.peek(), Some(Ok(Token::Comma))) {
+                lexer.next();
+                patterns.push(parse_pattern(lexer)?);
+            }
 
-    assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
-
-    if expressions.len() == 1 {
-        let exp = expressions.drain(0..1).next().unwrap();
-        Ok(Pattern::Single(Box::new(exp)))
-    } else {
-        Ok(Pattern::Tuple(expressions))
+            assert_eq!(lexer.next(), Some(Ok(Token::RightParenthesis)));
+            Ok(Pattern::Tuple(patterns))
+        }
+        Some(Ok(t)) if is_value(t) => {
+            let value = lexer.next().unwrap().unwrap();
+            Ok(Pattern::Single(Box::new(parse_value(value))))
+        }
+        Some(Ok(Token::Wildcard)) => {
+            lexer.next();
+            Ok(Pattern::Empty)
+        }
+        _ => return Err(ParsingError::InvalidSyntax),
     }
 }
 
@@ -392,19 +365,7 @@ fn parse_list(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 }
 
 fn parse_handler(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
-    let pattern = match lexer.peek() {
-        Some(Ok(Token::LeftParenthesis)) => {
-            lexer.next();
-            parse_pattern(lexer)?
-        }
-        Some(Ok(Token::Identifier(_))) => {
-            let Some(Ok(Token::Identifier(s))) = lexer.next() else {
-                unreachable!()
-            };
-            Pattern::Single(Box::new(AST::Identifier(s)))
-        }
-        _ => return Err(ParsingError::InvalidSyntax),
-    };
+    let pattern = parse_pattern(lexer)?;
 
     let guard = if matches!(lexer.peek(), Some(Ok(Token::When))) {
         lexer.next();
@@ -417,30 +378,14 @@ fn parse_handler(lexer: &mut PeekableLexer<'_>) -> Result<AST, ParsingError> {
 
     let body = parse_expr(lexer, 0)?;
 
-    let condition = if let Some(when_guard) = guard {
-        AST::Conditional(
-            Box::new(AST::Operation(
-                "andalso".to_string(),
-                vec![
-                    AST::Match(pattern, Box::new(AST::Identifier("input".to_string()))),
-                    when_guard,
-                ],
-            )),
-            Box::new(body),
-            None,
-        )
-    } else {
-        AST::Conditional(
-            Box::new(AST::Match(
-                pattern,
-                Box::new(AST::Identifier("input".to_string())),
-            )),
-            Box::new(body),
-            None,
-        )
-    };
-
-    Ok(AST::Lambda(Some("input".to_string()), Box::new(condition)))
+    Ok(AST::Case(
+        Box::new(AST::Identifier("_handlerInput".to_string())),
+        vec![MatchClause {
+            pattern,
+            guard,
+            body,
+        }],
+    ))
 }
 
 #[derive(Debug)]
