@@ -49,7 +49,7 @@ pub enum Token {
     #[regex(r"true|false", |boolean| boolean.slice().parse().ok())]
     Boolean(bool),
 
-    #[regex("\"[a-zA-Z]+\"", |lit| lit.slice().trim_matches('"').to_string())]
+    #[regex("\"[a-zA-Z0-9 ]+\"", |lit| lit.slice().trim_matches('"').to_string())]
     StringLiteral(String),
 
     #[regex(r"[a-zA-Z\_]+[0-9]*", |id| id.slice().to_string())]
@@ -96,4 +96,10 @@ pub enum Token {
 
     #[token("import")]
     Import,
+}
+
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        format!("{:?}", self).to_owned()
+    }
 }
