@@ -2,5 +2,5 @@ let
     val list = [1, 2]
 in 
     print list;
-    print ["test", 2]
+    print ["test", "hello"]
 end

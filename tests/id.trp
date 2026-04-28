@@ -1,0 +1,7 @@
+let 
+    fun identity x = x
+    val y = identity "helloo"
+    val x = identity 8
+in 
+    y
+end
