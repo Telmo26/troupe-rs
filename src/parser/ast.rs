@@ -1,6 +1,4 @@
-#![allow(dead_code)]
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AST {
     Let {
         name: Pattern,
@@ -28,14 +26,15 @@ pub enum AST {
     SecurityLevel(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
-    Single(Box<AST>),
+    Variable(String),
+    Value(Box<AST>),
     Tuple(Vec<Pattern>),
     Empty,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatchClause {
     pub pattern: Pattern,
     pub guard: Option<AST>,

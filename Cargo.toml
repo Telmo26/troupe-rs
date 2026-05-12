@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
+crossbeam = "0.8.4"
+dashmap = "6.1.0"
 logos = "0.16.1"
+uuid = { version = "1.23.1", features = ["v4"] }

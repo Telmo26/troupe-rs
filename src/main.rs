@@ -4,12 +4,13 @@ use clap::Parser;
 use logos::Logos;
 
 mod lexer;
-mod type_checker;
-use lexer::Token;
-
-use crate::{parser::parse, type_checker::type_check};
-
 mod parser;
+mod type_checker;
+mod interpreter;
+
+use crate::{
+    interpreter::Interpreter, lexer::Token, parser::parse, type_checker::type_check
+};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -23,7 +24,10 @@ fn main() -> std::io::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
-    type_check(ast).expect("Type check failed");
+    type_check(&ast).expect("Type check failed");
+
+    let mut interpreter = Interpreter::default();
+    interpreter.run(ast);
 
     Ok(())
 }
