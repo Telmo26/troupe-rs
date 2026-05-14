@@ -8,7 +8,7 @@ use crate::{
 pub struct Ctx {
     fresh: u32,
     constraints: Vec<Constraint>,
-    name_map: HashMap<String, Scheme>,
+    pub name_map: HashMap<String, Scheme>,
 }
 
 impl Ctx {
@@ -39,10 +39,14 @@ impl Ctx {
             ),
             "sleep" => Type::Lambda(Box::new(Type::Int), Box::new(Type::Unit)),
             "send" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
-            "receive" => Type::Lambda(
-                Box::new(Type::List(Box::new(Type::Unit))),
-                Box::new(self.get_fresh()),
-            ),
+            "receive" => {
+                let f = self.get_fresh();
+                let msg = self.get_fresh();
+                Type::Lambda(
+                    Box::new(Type::List(Box::new(Type::Lambda(Box::new(msg), Box::new(f.clone()))))),
+                    Box::new(f),
+                )
+            }
             "self" | "mkuuid" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Int)),
             "spawn" => Type::Lambda(
                 Box::new(Type::Lambda(
@@ -78,7 +82,10 @@ impl Ctx {
 
     pub fn insert_new_variable_with_set(&mut self, var: &Pattern, t: Type, free_vars: &[u32]) {
         match var {
-            Pattern::Variable(child) => self.insert(child.to_owned(), Scheme::new(t, free_vars.to_vec())),
+            Pattern::Variable(child) => {
+                dbg!(child);
+                self.insert(child.to_owned(), Scheme::new(t, free_vars.to_vec()));
+            }
             Pattern::Tuple(variables) => {
                 let fresh_types: Vec<_> = variables.iter().map(|_| self.get_fresh()).collect();
 

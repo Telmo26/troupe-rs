@@ -192,7 +192,6 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
             Type::Lambda(Box::new(t1), Box::new(t2))
         }
         AST::Unit => Type::Unit,
-        AST::Wildcard => Type::Wildcard,
         AST::Number(_) => Type::Int,
         AST::StringLiteral(_) => Type::String,
         AST::Boolean(_) => Type::Bool,
@@ -205,6 +204,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
             None => return Err(TypeError::UnknownVariable(ident.to_string())),
         },
         AST::SecurityLevel(_) => Type::Label,
+        AST::Unreachable => ctx.get_fresh(),
     })
 }
 

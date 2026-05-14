@@ -106,7 +106,6 @@ impl<'a> Parser<'a> {
                 self.next()?; // We ignore the imported module
                 return self.parse_expr(min_bp);
             }
-            Token::Wildcard => return Ok(AST::Wildcard),
             Token::Let => self.parse_let()?,
             Token::Val => {
                 let (name, value) = self.parse_variable()?;
@@ -488,15 +487,21 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::Arrow)?;
 
-        let body = self.parse_expr(0)?;
+        let body = AST::Lambda(None, Box::new(self.parse_expr(0)?));
 
-        Ok(AST::Case(
-            Box::new(AST::Identifier("_handlerInput".to_string())),
-            vec![MatchClause {
-                pattern,
-                guard,
-                body,
-            }],
+        Ok(AST::Lambda(Some("msg".to_string()), 
+            Box::new(AST::Case(
+                Box::new(AST::Identifier("msg".to_string())),
+                vec![MatchClause {
+                    pattern,
+                    guard,
+                    body: AST::Tuple(vec![AST::Boolean(true), body]),
+                }, MatchClause {
+                    pattern: Pattern::Empty,
+                    guard: None,
+                    body: AST::Tuple(vec![AST::Boolean(false), AST::Unreachable])
+                }]
+            ))
         ))
     }
 }

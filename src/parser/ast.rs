@@ -17,13 +17,14 @@ pub enum AST {
     List(Vec<AST>),
 
     Unit,
-    Wildcard,
     Number(f64),
     StringLiteral(String),
     Boolean(bool),
     Identifier(String),
     Lambda(Option<String>, Box<AST>),
     SecurityLevel(String),
+
+    Unreachable
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,6 +1,8 @@
 let 
     val list = [1, 2]
+    val new_list = 3::list
 in 
     print list;
+    print new_list;
     print ["test", "hello"]
 end

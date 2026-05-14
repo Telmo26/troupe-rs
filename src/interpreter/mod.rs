@@ -1,23 +1,28 @@
-use std::{collections::{HashMap, HashSet}, sync::Arc, thread::JoinHandle};
+use std::{collections::{HashMap, LinkedList}, sync::Arc, thread::JoinHandle};
 
-use crate::{interpreter::network_layer::NetworkLayer, parser::{AST, MatchClause, Pattern}};
+use crate::{interpreter::environment::Environment, parser::{AST, MatchClause, Pattern}};
 
 use uuid::Uuid;
 
 mod runtime_error;
 mod builtins;
 mod network_layer;
+mod runtime_value;
+mod environment;
 
 use self::{
-    runtime_error::RuntimeError
+    runtime_error::RuntimeError,
+    runtime_value::{RuntimeValue, Value},
+    environment::EnvPtr,
+    network_layer::NetworkLayer,
 };
 
 #[derive(Debug)]
 pub struct Interpreter {
     uuid: Uuid,
     network_layer: Arc<NetworkLayer>,
-    threads: Vec<(Uuid, JoinHandle<Result<AST, RuntimeError>>)>,
-    env: HashMap<String, AST>,
+    threads: Vec<(Uuid, JoinHandle<Result<RuntimeValue, RuntimeError>>)>,
+    env: EnvPtr,
 }
 
 impl Default for Interpreter {
@@ -25,11 +30,16 @@ impl Default for Interpreter {
         let uuid = Uuid::new_v4();
         let network_layer = NetworkLayer::default();
         network_layer.new_local_id(&uuid);
+
+        let mut env = EnvPtr::default();
+        builtins::install(&mut env);
+        env.insert("authority".into(), Value::Authority.into());
+
         Interpreter { 
             uuid, 
             network_layer: Arc::new(network_layer), 
             threads: vec![], 
-            env: HashMap::new() 
+            env 
         }
     }
 }
@@ -58,101 +68,109 @@ impl Interpreter {
         });
     }
 
-    pub fn eval(&mut self, tree: AST) -> Result<AST, RuntimeError> {
+    pub fn eval(&mut self, tree: AST) -> Result<RuntimeValue, RuntimeError> {
         // #[cfg(debug_assertions)]
         // dbg!(&tree);
 
         match tree {
-            AST::Unit | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) | AST::Lambda(_, _)=> return Ok(tree),
+            AST::Unreachable => Ok(Value::Unreachable.into()),
+            AST::Unit | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) | AST::SecurityLevel(_) => return tree.try_into(),
+            AST::Lambda(parameter, body) => {
+                return Ok(Value::Closure { 
+                    parameter, 
+                    body: *body, 
+                    env: self.env.clone() 
+                }.into())
+            }
             AST::Tuple(values) => {
                 let values = values.into_iter()
                     .map(|v| self.eval(v))
                     .collect::<Result<Vec<_>, _>>()?;
-                return Ok(AST::Tuple(values))
+                return Ok(Value::Tuple(values).into())
             }
             AST::List(values) => {
                 let values = values.into_iter()
                     .map(|v| self.eval(v))
-                    .collect::<Result<Vec<_>, _>>()?;
-                return Ok(AST::List(values))
+                    .collect::<Result<LinkedList<_>, _>>()?;
+                return Ok(Value::List(values).into())
             }
             AST::Identifier(id) => match self.env.get(&id) {
                 Some(value) => Ok(value.clone()),
                 None => Err(RuntimeError::RuntimeError)
             }
-            AST::Let { name, value, body, .. } => {
-                self.run_declaration(name, *value)?;
-                self.eval(*body)
+            AST::Let { name, value, body, rec } => {
+                let let_env = Environment::new_child(self.env.clone());
+                let old_env = self.env.clone();
+                
+                if rec {
+                    self.env = let_env.clone();
+                    let v = self.eval(*value)?;
+                    self.run_declaration(name, v)?;
+                } else {
+                    let v = self.eval(*value)?;
+                    self.env = let_env.clone();
+                    self.run_declaration(name, v)?;
+                }
+
+                let result = self.eval(*body);
+                self.env = old_env;
+                result
             }
             AST::FunctionCall { callee, argument } => {
-                let argument = self.eval(*argument)?;
-                match *callee {
-                    AST::Identifier(id) => {
-                        match self.env.get(&id) {
-                            Some(AST::Lambda(parameter, body)) => {
-                                if parameter.is_some() {
-                                    let parameter = parameter.as_ref().unwrap();
-                                    let substituted_body = substitute(parameter, argument, *body.clone());
-                                    self.eval(substituted_body)
-                                } else {
-                                    self.eval(*body.clone())
-                                }
-                            }
-                            None => self.use_builtin(&id, argument),
-                            _ => Err(RuntimeError::RuntimeError)
+                let callee_val = self.eval(*callee)?;
+                let arg_val = self.eval(*argument)?;
+
+                match callee_val.value {
+                    Value::Closure { parameter, body, env } => {
+                        let call_env = Environment::new_child(env.clone());
+
+                        if let Some(param) = parameter {
+                            call_env.insert(param, arg_val);
                         }
+
+                        let old_env = self.env.clone();
+                        self.env = call_env;
+
+                        let result = self.eval(body);
+
+                        self.env = old_env;
+                        result
                     }
-                    AST::Lambda(param, body) => {
-                        match param {
-                            Some(parameter) => {
-                                let new_body = substitute(&parameter, argument, *body);
-                                self.eval(new_body)
-                            }
-                            None => self.eval(*body)
-                        }
-                    }
-                    AST::FunctionCall { .. } => {
-                        let callee = self.eval(*callee)?;
-                        self.eval(AST::FunctionCall { callee: Box::new(callee), argument: Box::new(argument) })
-                    }
-                    _ => Err(RuntimeError::RuntimeError)
+
+                    Value::Builtin(f) => f(self, arg_val),
+
+                    _ => Err(RuntimeError::RuntimeError),
                 }
             }
             AST::Conditional(condition, branch1, branch2) => {
                 let cond = self.eval(*condition)?;
-                match cond {
-                    AST::Boolean(bool) => {
+                match cond.value {
+                    Value::Boolean(bool) => {
                         if bool {
                             self.eval(*branch1)
                         } else if let Some(b2) = branch2 {
                             self.eval(*b2)
                         } else {
-                            Ok(AST::Unit)
+                            Ok(Value::Unit.into())
                         }
                     } 
                     _ => Err(RuntimeError::RuntimeError)
                 }
             }
             AST::Operation(op, values) => self.run_operation(op, values),
-            AST::Case(identifier, clauses) => {
-                match *identifier {
-                    // This case is only hit when handlers are in play, and the receive built-in function is responsible 
-                    // for handling the execution of the handlers, not the main function
-                    AST::Identifier(id) if id == "_handlerInput" => Ok(AST::Case(Box::new(AST::Identifier(id)), clauses)),
-                    _ => todo!()
-                }
+            AST::Case(expr, clauses) => {
+                let value = self.eval(*expr)?;
+                self.run_case(value, clauses)
             }
-            _ => todo!()
         }
     }
 
-    fn run_declaration(&mut self, pattern: Pattern, value: AST) -> Result<(), RuntimeError> {
-        let value = self.eval(value)?;
+    fn run_declaration(&mut self, pattern: Pattern, runtime_value: RuntimeValue) -> Result<(), RuntimeError> {
         match pattern {
             Pattern::Empty => (),
-            Pattern::Variable(name) => { self.env.insert(name, value); },
-            Pattern::Tuple(pattern_tuple) =>  match value {
-                AST::Tuple(value_tuple) => {
+            Pattern::Variable(name) => { self.env.insert(name, runtime_value); },
+            Pattern::Tuple(pattern_tuple) => match runtime_value.value {
+                Value::Tuple(value_tuple) => {
                     if pattern_tuple.len() == value_tuple.len() {
                         for (pattern, value) in pattern_tuple.into_iter().zip(value_tuple) {
                             self.run_declaration(pattern, value)?;
@@ -168,219 +186,103 @@ impl Interpreter {
         Ok(())
     }
 
-    fn run_operation(&mut self, op: String, values: Vec<AST>) -> Result<AST, RuntimeError> {
+    fn run_operation(&mut self, op: String, values: Vec<AST>) -> Result<RuntimeValue, RuntimeError> {
         // We first reduce the parameters
         let mut values = values.into_iter()
             .map(|v| self.eval(v));
-        let v1 = values.next().unwrap()?; // Every operation has a first member
-        let v2 = values.next().transpose()?; // Some have a second member
+        let v1 = values.next().unwrap()?.value; // Every operation has a first member
+        let v2 = values.next().transpose()?.map(|v| v.value); // Some have a second member
 
         match (op.as_str(), v1, v2) {
-            ("<", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Boolean(n1 < n2)),
-            ("<=", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Boolean(n1 <= n2)),
-            (">", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Boolean(n1 > n2)),
-            (">=", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Boolean(n1 >= n2)),
-            ("+", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Number(n1 + n2)),
-            ("-", AST::Number(n1), None) => Ok(AST::Number(-n1)),
-            ("-", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Number(n1 - n2)),
-            ("/", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Number(n1 / n2)),
-            ("*", AST::Number(n1), Some(AST::Number(n2))) => Ok(AST::Number(n1 * n2)),
-            ("=", ast1, Some(ast2)) => Ok(AST::Boolean(ast1 == ast2)),
-            ("andalso", AST::Boolean(b1), Some(AST::Boolean(b2))) => Ok(AST::Boolean(b1 && b2)),
-            ("orelse", AST::Boolean(b1), Some(AST::Boolean(b2))) => Ok(AST::Boolean(b1 || b2)),
+            ("<", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Boolean(n1 < n2).into()),
+            ("<=", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Boolean(n1 <= n2).into()),
+            (">", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Boolean(n1 > n2).into()),
+            (">=", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Boolean(n1 >= n2).into()),
+            ("+", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Number(n1 + n2).into()),
+            ("-", Value::Number(n1), None) => Ok(Value::Number(-n1).into()),
+            ("-", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Number(n1 - n2).into()),
+            ("/", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Number(n1 / n2).into()),
+            ("*", Value::Number(n1), Some(Value::Number(n2))) => Ok(Value::Number(n1 * n2).into()),
+            ("=", ast1, Some(ast2)) => Ok(Value::Boolean(ast1 == ast2).into()),
+            ("andalso", Value::Boolean(b1), Some(Value::Boolean(b2))) => Ok(Value::Boolean(b1 && b2).into()),
+            ("orelse", Value::Boolean(b1), Some(Value::Boolean(b2))) => Ok(Value::Boolean(b1 || b2).into()),
+            ("::", value, Some(Value::List(mut l))) => {
+                l.push_front(value.into());
+                Ok(Value::List(l).into())
+            }
             _ => todo!()
         }
     }
-}
 
-fn substitute(parameter: &str, argument_value: AST, body: AST) -> AST {
-    match body {
-        AST::Identifier(name) if name == parameter => argument_value,
-        AST::Unit | AST::Wildcard | AST::Number(_) | AST::StringLiteral(_) | 
-        AST::Boolean(_) | AST::SecurityLevel(_) | AST::Identifier(_) => body,
-        AST::Let { name, value, body, rec } => {
-            match name {
-                Pattern::Variable(n) if n == parameter => {
-                    AST::Let { 
-                        name: Pattern::Variable(n), 
-                        value: Box::new(substitute(parameter, argument_value, *value)), 
-                        body, 
-                        rec 
+    fn run_case(&mut self, value: RuntimeValue, clauses: Vec<MatchClause>) -> Result<RuntimeValue, RuntimeError> {
+        for clause in clauses {
+            if let Some(bindings) = self.match_pattern(&clause.pattern, &value)? {
+                let old_env = self.env.clone();
+
+                let new_env = Environment::new_child(self.env.clone());
+                new_env.extend(bindings);
+
+                self.env = new_env;
+
+                // Evaluate guard if present
+                let guard_ok = if let Some(guard) = clause.guard {
+                    match self.eval(guard)?.value {
+                        Value::Boolean(b) => b,
+                        _ => return Err(RuntimeError::RuntimeError)
                     }
-                }
-                _ => AST::Let { 
-                    name, 
-                    value: Box::new(substitute(parameter, argument_value.clone(), *value)), 
-                    body: Box::new(substitute(parameter, argument_value, *body)), 
-                    rec 
-                }
-            }
-        },
-        AST::FunctionCall { callee, argument } => {
-            AST::FunctionCall { 
-                callee: Box::new(substitute(parameter, argument_value.clone(), *callee)), 
-                argument: Box::new(substitute(parameter, argument_value, *argument))
-            }
-        }
-        AST::Operation(name, members) => {
-            AST::Operation(
-                name, 
-                members.into_iter()
-                    .map(|m| substitute(parameter, argument_value.clone(), m))
-                    .collect()
-            )
-        }
-        AST::Case(matched_value, clauses) => {
-            let new_clauses = clauses.into_iter().map(|clause| MatchClause {
-                guard: clause.guard.map(|v| substitute(parameter, argument_value.clone(), v)),
-                body: substitute(parameter, argument_value.clone(), clause.body),
-                ..clause
-            })
-            .collect();
-
-            AST::Case(
-                Box::new(substitute(parameter, argument_value, *matched_value)), 
-                new_clauses
-            )
-        }
-        AST::Conditional(condition, branch1, branch2) => {
-            AST::Conditional(
-                Box::new(substitute(parameter, argument_value.clone(), *condition)), 
-                Box::new(substitute(parameter, argument_value.clone(), *branch1)), 
-                branch2.map(|b| Box::new(substitute(parameter, argument_value, *b)))
-            )
-        }
-        AST::Tuple(values) => {
-            AST::Tuple(values.into_iter()
-                .map(|value| substitute(parameter, argument_value.clone(), value))
-                .collect()
-            )
-        }
-        AST::List(values) => {
-            AST::List(values.into_iter()
-                .map(|value| substitute(parameter, argument_value.clone(), value))
-                .collect()
-            )
-        }
-        AST::Lambda(None, body) => AST::Lambda(None, Box::new(substitute(parameter, argument_value, *body))),
-        AST::Lambda(Some(var), body) if var != parameter => {
-            let fv = free_variables(&argument_value);
-
-            if fv.contains(&var) {
-                let mut new_var = var.clone() + "@";
-                while fv.contains(&new_var) {
-                    new_var += "@";
+                } else {
+                    true
                 };
-                let new_body = substitute(&var, AST::Identifier(new_var.clone()), *body);
-                AST::Lambda(Some(new_var), Box::new(substitute(parameter, argument_value, new_body)))
-            } else {
-                AST::Lambda(Some(var), Box::new(substitute(parameter, argument_value, *body)))
-            }
-        }
-        AST::Lambda(Some(_), _) => body,
-        
-    }
-}
 
-pub fn free_variables(ast: &AST) -> HashSet<String> {
-    let mut set = HashSet::new();
-    compute_fv(ast, &mut set);
-    set
-}
-
-pub fn compute_fv(ast: &AST, acc: &mut HashSet<String>) {
-    match ast {
-        AST::Identifier(id) => {
-            acc.insert(id.clone());
-        }
-
-        AST::FunctionCall { callee, argument } => {
-            compute_fv(callee, acc);
-            compute_fv(argument, acc);
-        }
-
-        AST::Operation(_, args) => {
-            for e in args {
-                compute_fv(e, acc);
-            }
-        }
-
-        AST::Conditional(cond, then_e, else_e) => {
-            compute_fv(cond, acc);
-            compute_fv(then_e, acc);
-            if let Some(e) = else_e {
-                compute_fv(e, acc);
-            }
-        }
-
-        AST::Tuple(elements) | AST::List(elements) => {
-            for e in elements {
-                compute_fv(e, acc);
-            }
-        }
-
-        AST::Lambda(param, body) => {
-            compute_fv(body, acc);
-
-            if let Some(p) = param {
-                acc.remove(p);
-            }
-        }
-
-        AST::Let { name, value, body, .. } => {
-            compute_fv(value, acc);
-
-            let mut body_fv = HashSet::new();
-            compute_fv(body, &mut body_fv);
-
-            // Variables bound by the let pattern
-            let mut bound = HashSet::new();
-            bound_vars_pattern(name, &mut bound);
-
-            // We remove the variables bound by the let from the body's free variables
-            body_fv.retain(|v| !bound.contains(v));
-
-            acc.extend(body_fv);
-        }
-
-        AST::Case(expr, clauses) => {
-            compute_fv(expr, acc);
-
-            for clause in clauses {
-                let mut clause_fv = HashSet::new();
-
-                // guard contributes free vars
-                if let Some(g) = &clause.guard {
-                    compute_fv(g, &mut clause_fv);
+                if guard_ok {
+                    let result = self.eval(clause.body);
+                    self.env = old_env;
+                    return result
                 }
 
-                compute_fv(&clause.body, &mut clause_fv);
-
-                // subtract pattern-bound variables
-                let mut bound = HashSet::new();
-                bound_vars_pattern(&clause.pattern, &mut bound);
-                clause_fv.retain(|v| !bound.contains(v));
-
-                acc.extend(clause_fv);
+                // Guard failed, restore env and continue
+                self.env = old_env;
             }
         }
 
-        AST::Unit
-        | AST::Wildcard
-        | AST::Number(_)
-        | AST::StringLiteral(_)
-        | AST::Boolean(_)
-        | AST::SecurityLevel(_) => ()
+        Err(RuntimeError::RuntimeError)
     }
-}
 
-fn bound_vars_pattern(pattern: &Pattern, acc: &mut HashSet<String>) {
-    match pattern {
-        Pattern::Empty | Pattern::Value(_) => (),
-        Pattern::Variable(id) => { acc.remove(id); },
-        Pattern::Tuple(values) => {
-            for p in values {
-                bound_vars_pattern(p, acc);
+    fn match_pattern(&mut self, pattern: &Pattern, value: &RuntimeValue) -> Result<Option<HashMap<String, RuntimeValue>>, RuntimeError> {
+        match pattern {
+            Pattern::Empty => Ok(Some(HashMap::new())),
+            Pattern::Variable(name) => {
+                let mut map = HashMap::new();
+                map.insert(name.clone(), value.clone());
+                Ok(Some(map))
+            }
+            Pattern::Value(ast) => {
+                let litt_value: Value = (*ast.clone()).try_into()?;
+                if litt_value == value.value {
+                    Ok(Some(HashMap::new()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Pattern::Tuple(patterns) => match &value.value {
+                Value::Tuple(values) => {
+                    if patterns.len() != values.len() {
+                        return Ok(None);
+                    }
+
+                    // The new bindings to be done recursively
+                    let mut bindings = HashMap::new();
+
+                    for (p, v) in patterns.iter().zip(values) {
+                        match self.match_pattern(p, v)? {
+                            Some(b) => bindings.extend(b),
+                            None => return Ok(None)
+                        }
+                    }
+
+                    Ok(Some(bindings))
+                }
+                _ => Ok(None)
             }
         }
     }

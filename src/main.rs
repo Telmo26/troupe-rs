@@ -24,7 +24,7 @@ fn main() -> std::io::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
-    type_check(&ast).expect("Type check failed");
+    // type_check(&ast).expect("Type check failed");
 
     let mut interpreter = Interpreter::default();
     interpreter.run(ast);
