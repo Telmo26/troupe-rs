@@ -4,10 +4,12 @@ use clap::Parser;
 use logos::Logos;
 
 mod lexer;
+mod static_ifc;
 mod type_checker;
+
 use lexer::Token;
 
-use crate::{parser::parse, type_checker::type_check};
+use crate::{parser::parse, static_ifc::static_ifc_check, type_checker::type_check};
 
 mod parser;
 
@@ -23,7 +25,8 @@ fn main() -> std::io::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
-    type_check(ast).expect("Type check failed");
+    type_check(&ast).expect("Type check failed");
+    static_ifc_check(&ast, false).expect("Static analysis failed.");
 
     Ok(())
 }

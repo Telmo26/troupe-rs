@@ -283,7 +283,7 @@ fn resolve_constraints(mut constraints: Vec<Constraint>) -> Result<(), TypeError
     Ok(())
 }
 
-pub fn type_check(ast: AST) -> Result<(), TypeError> {
+pub fn type_check(ast: &AST) -> Result<(), TypeError> {
     let mut ctx = Ctx::new();
     get_type_constraints(&ast, &mut ctx)?;
     let constraints = ctx.drop_constraints();
