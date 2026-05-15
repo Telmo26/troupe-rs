@@ -3,7 +3,6 @@ use std::collections::HashSet;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {
     String,
-    Wildcard,
     Int,
     Unit,
     Bool,

@@ -26,7 +26,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
             body,
             rec,
         } => match name {
-            Pattern::Single(_) => {
+            Pattern::Variable(_) => {
                 if *rec {
                     let rec_gen = ctx.get_fresh();
                     ctx.insert_new_variable(&name, rec_gen.clone());
@@ -54,6 +54,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
                 get_type_constraints(value, ctx)?;
                 get_type_constraints(body, ctx)?
             }
+            Pattern::Value(_) => unreachable!()
         },
         AST::FunctionCall { callee, argument } => {
             let arg_fresh = ctx.get_fresh();
@@ -191,7 +192,6 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
             Type::Lambda(Box::new(t1), Box::new(t2))
         }
         AST::Unit => Type::Unit,
-        AST::Wildcard => Type::Wildcard,
         AST::Number(_) => Type::Int,
         AST::StringLiteral(_) => Type::String,
         AST::Boolean(_) => Type::Bool,
@@ -204,6 +204,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
             None => return Err(TypeError::UnknownVariable(ident.to_string())),
         },
         AST::SecurityLevel(_) => Type::Label,
+        AST::Unreachable => ctx.get_fresh(),
     })
 }
 
@@ -285,7 +286,7 @@ fn resolve_constraints(mut constraints: Vec<Constraint>) -> Result<(), TypeError
 
 pub fn type_check(ast: &AST) -> Result<(), TypeError> {
     let mut ctx = Ctx::new();
-    get_type_constraints(&ast, &mut ctx)?;
+    get_type_constraints(ast, &mut ctx)?;
     let constraints = ctx.drop_constraints();
     resolve_constraints(constraints)
 }

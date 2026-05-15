@@ -2,10 +2,10 @@ use std::ops::Range;
 
 use logos::SpannedIter;
 
-use crate::{lexer::Token, parser::ast::MatchClause};
+use crate::lexer::Token;
 
 mod ast;
-pub use ast::{Pattern, AST};
+pub use ast::{Pattern, AST, MatchClause};
 
 mod utils;
 use utils::{is_value, parse_value};
@@ -98,7 +98,6 @@ impl<'a> Parser<'a> {
 // These are the real deal
 impl<'a> Parser<'a> {
     fn parse_expr(&mut self, min_bp: u8) -> Result<AST, ParsingError> {
-        println!("Parsing expression: {:?}", self.peek());
         let (token, span) = self.next()?;
         let mut lhs = match token {
             Token::Unit => return Ok(AST::Unit),
@@ -107,7 +106,6 @@ impl<'a> Parser<'a> {
                 self.next()?; // We ignore the imported module
                 return self.parse_expr(min_bp);
             }
-            Token::Wildcard => return Ok(AST::Wildcard),
             Token::Let => self.parse_let()?,
             Token::Val => {
                 let (name, value) = self.parse_variable()?;
@@ -253,8 +251,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_variable(&mut self) -> Result<(Pattern, AST), ParsingError> {
-        println!("Parsing variable: {:?}", self.peek());
-
         match self.peek()? {
             // This is the normal assignment or pattern-matching
             (Token::Identifier(_), _) | (Token::LeftParenthesis, _) => {
@@ -288,11 +284,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, named: bool) -> Result<(Pattern, AST), ParsingError> {
-        println!("Parsing function: {:?}", self.peek());
         // We get the function's name if it is named
         let name = if named {
             match self.next()? {
-                (Token::Identifier(n), _) => Pattern::Single(Box::new(AST::Identifier(n))),
+                (Token::Identifier(n), _) => Pattern::Variable(n),
                 (Token::Wildcard, _) => Pattern::Empty,
                 (token, span) => {
                     return Err(ParsingError::UnexpectedToken {
@@ -421,7 +416,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ParsingError> {
-        println!("Parsing pattern : {:?}", self.peek());
         match self.peek()? {
             (Token::LeftParenthesis, _) => {
                 self.next()?;
@@ -434,13 +428,19 @@ impl<'a> Parser<'a> {
 
                 Ok(Pattern::Tuple(patterns))
             }
-            (t, _) if is_value(t) => {
-                let value = self.next().unwrap().0;
-                Ok(Pattern::Single(Box::new(parse_value(value))))
+            (Token::Identifier(id), _) => {
+                let id = id.clone();
+                self.next()?;
+                Ok(Pattern::Variable(id))
             }
             (Token::Wildcard, _) => {
                 self.next()?;
                 Ok(Pattern::Empty)
+            }
+            (token, _) if is_value(token) => {
+                let token = token.clone();
+                self.next()?;
+                Ok(Pattern::Value(Box::new(parse_value(token))))
             }
             _ => {
                 let (token, span) = self.next()?;
@@ -487,15 +487,21 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::Arrow)?;
 
-        let body = self.parse_expr(0)?;
+        let body = AST::Lambda(None, Box::new(self.parse_expr(0)?));
 
-        Ok(AST::Case(
-            Box::new(AST::Identifier("_handlerInput".to_string())),
-            vec![MatchClause {
-                pattern,
-                guard,
-                body,
-            }],
+        Ok(AST::Lambda(Some("msg".to_string()), 
+            Box::new(AST::Case(
+                Box::new(AST::Identifier("msg".to_string())),
+                vec![MatchClause {
+                    pattern,
+                    guard,
+                    body: AST::Tuple(vec![AST::Boolean(true), body]),
+                }, MatchClause {
+                    pattern: Pattern::Empty,
+                    guard: None,
+                    body: AST::Tuple(vec![AST::Boolean(false), AST::Unreachable])
+                }]
+            ))
         ))
     }
 }
