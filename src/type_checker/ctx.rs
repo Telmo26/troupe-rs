@@ -57,6 +57,13 @@ impl Ctx {
             ),
             "print" | "adv" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
             "crash" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Unit)),
+            "declassify" => {
+                let g = self.get_fresh();
+                Type::Lambda(
+                    Box::new(Type::Tuple(vec![g.clone(), Type::Authority, Type::Label])),
+                    Box::new(g),
+                )
+            }
             _ => return None,
         };
 
