@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    parser::{Pattern, AST},
+    parser::Pattern,
     type_checker::{deep_substitute, scheme::Scheme, types::Type, Constraint},
 };
 
 pub struct Ctx {
     fresh: u32,
     constraints: Vec<Constraint>,
-    name_map: HashMap<String, Scheme>,
+    pub name_map: HashMap<String, Scheme>,
 }
 
 impl Ctx {
@@ -39,10 +39,14 @@ impl Ctx {
             ),
             "sleep" => Type::Lambda(Box::new(Type::Int), Box::new(Type::Unit)),
             "send" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
-            "receive" => Type::Lambda(
-                Box::new(Type::List(Box::new(Type::Unit))),
-                Box::new(self.get_fresh()),
-            ),
+            "receive" => {
+                let f = self.get_fresh();
+                let msg = self.get_fresh();
+                Type::Lambda(
+                    Box::new(Type::List(Box::new(Type::Lambda(Box::new(msg), Box::new(f.clone()))))),
+                    Box::new(f),
+                )
+            }
             "self" | "mkuuid" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Int)),
             "spawn" => Type::Lambda(
                 Box::new(Type::Lambda(
@@ -51,7 +55,7 @@ impl Ctx {
                 )),
                 Box::new(Type::Int),
             ),
-            "print" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
+            "print" | "adv" => Type::Lambda(Box::new(self.get_fresh()), Box::new(Type::Unit)),
             "crash" => Type::Lambda(Box::new(Type::Unit), Box::new(Type::Unit)),
             _ => return None,
         };
@@ -78,12 +82,10 @@ impl Ctx {
 
     pub fn insert_new_variable_with_set(&mut self, var: &Pattern, t: Type, free_vars: &[u32]) {
         match var {
-            Pattern::Single(child) => match &child as &AST {
-                AST::Identifier(name) => {
-                    self.insert(name.to_owned(), Scheme::new(t, free_vars.to_vec()))
-                }
-                _ => (),
-            },
+            Pattern::Variable(child) => {
+                dbg!(child);
+                self.insert(child.to_owned(), Scheme::new(t, free_vars.to_vec()));
+            }
             Pattern::Tuple(variables) => {
                 let fresh_types: Vec<_> = variables.iter().map(|_| self.get_fresh()).collect();
 
@@ -104,11 +106,8 @@ impl Ctx {
 
     pub fn remove_variable(&mut self, var: &Pattern) {
         match var {
-            Pattern::Single(child) => match &child as &AST {
-                AST::Identifier(name) => {
-                    self.remove(name);
-                }
-                _ => (),
+            Pattern::Variable(child) => {
+                self.remove(child);
             },
             Pattern::Tuple(variables) => {
                 for var in variables {
