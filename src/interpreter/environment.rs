@@ -4,7 +4,6 @@ use dashmap::DashMap;
 
 use crate::interpreter::runtime_value::RuntimeValue;
 
-
 pub type EnvPtr = Arc<Environment>;
 
 #[derive(Debug, Default, Clone)]

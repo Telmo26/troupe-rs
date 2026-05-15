@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, LinkedList}, sync::Arc, thread::JoinHandle};
+use std::{collections::{HashMap, HashSet, LinkedList}, sync::Arc, thread::JoinHandle};
 
 use crate::{interpreter::environment::Environment, parser::{AST, MatchClause, Pattern}};
 
@@ -76,10 +76,23 @@ impl Interpreter {
             AST::Unreachable => Ok(Value::Unreachable.into()),
             AST::Unit | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) | AST::SecurityLevel(_) => return tree.try_into(),
             AST::Lambda(parameter, body) => {
+                let mut free_variables = free_variables(&body);
+
+                if let Some(p) = parameter.as_ref() {
+                    free_variables.remove(p);
+                }
+
+                let mut closure_env = HashMap::new();
+                for free_variable in free_variables {
+                    if let Some(rt_value) = self.env.get(&free_variable) && !matches!(rt_value.value, Value::Builtin(_)) {
+                        closure_env.insert(free_variable, rt_value);
+                    }
+                }
+
                 return Ok(Value::Closure { 
                     parameter, 
                     body: *body, 
-                    env: self.env.clone() 
+                    env: closure_env 
                 }.into())
             }
             AST::Tuple(values) => {
@@ -122,19 +135,7 @@ impl Interpreter {
 
                 match callee_val.value {
                     Value::Closure { parameter, body, env } => {
-                        let call_env = Environment::new_child(env.clone());
-
-                        if let Some(param) = parameter {
-                            call_env.insert(param, arg_val);
-                        }
-
-                        let old_env = self.env.clone();
-                        self.env = call_env;
-
-                        let result = self.eval(body);
-
-                        self.env = old_env;
-                        result
+                        self.eval_closure(parameter, Some(arg_val), body, env)
                     }
 
                     Value::Builtin(f) => f(self, arg_val),
@@ -209,6 +210,11 @@ impl Interpreter {
             ("::", value, Some(Value::List(mut l))) => {
                 l.push_front(value.into());
                 Ok(Value::List(l).into())
+            },
+            ("raisedTo", value, Some(Value::Label(l))) => {
+                let rt_value = RuntimeValue::from(value)
+                    .with_value_label(l);
+                Ok(rt_value)
             }
             _ => todo!()
         }
@@ -285,5 +291,81 @@ impl Interpreter {
                 _ => Ok(None)
             }
         }
+    }
+
+    fn eval_closure(&mut self, parameter: Option<String>, argument: Option<RuntimeValue>, body: AST, env: HashMap<String, RuntimeValue>) -> Result<RuntimeValue, RuntimeError> {
+        let call_env = Environment::new_child(self.env.clone());
+        call_env.extend(env);
+
+        if let Some(param) = parameter && let Some(arg_val) = argument {
+            call_env.insert(param, arg_val);
+        }
+
+        let old_env = self.env.clone();
+        self.env = call_env;
+
+        let result = self.eval(body);
+
+        self.env = old_env;
+        result
+    }
+}
+
+fn free_variables(body: &AST) -> HashSet<String> {
+    let mut fv = HashSet::new();
+    compute_fv(body, &mut fv);
+    fv
+}
+
+fn compute_fv(body: &AST, acc: &mut HashSet<String>) {
+    match body {
+        AST::Let { name, value, body, rec } => {
+            compute_fv(body, acc);
+            remove_bound_variables(name, acc); // We remove the bound values from the body
+            compute_fv(value, acc);
+            if *rec {
+                // If the function is recursive, we must remove the function's bindings from its value too
+                remove_bound_variables(name, acc);
+            }
+        },
+        AST::FunctionCall { callee, argument } => {
+            compute_fv(callee, acc);
+            compute_fv(argument, acc);
+        },
+        AST::Operation(_, members) => members.iter().for_each(|m| compute_fv(m, acc)),
+        AST::Case(value, clauses) => {
+            compute_fv(value, acc);
+            clauses.iter().for_each(|cl| {
+                if let Some(g) = &cl.guard {
+                    compute_fv(g, acc);
+                }
+                compute_fv(&cl.body, acc);
+                remove_bound_variables(&cl.pattern, acc);
+            });
+        },
+        AST::Conditional(condition, branch1, branch2) => {
+            compute_fv(condition, acc);
+            compute_fv(branch1, acc);
+            if let Some(b2) = branch2.as_ref() {
+                compute_fv(b2, acc);
+            }
+        },
+        AST::Tuple(values) | AST::List(values) => values.iter().for_each(|v| compute_fv(v, acc)),
+        AST::Unit | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) | AST::SecurityLevel(_) | AST::Unreachable => (),
+        AST::Identifier(id) => { acc.insert(id.clone()); }
+        AST::Lambda(param, body) => {
+            compute_fv(body, acc);
+            if let Some(p) = param.as_ref() {
+                acc.remove(p);
+            }
+        }
+    }
+}
+
+fn remove_bound_variables(pat: &Pattern, acc: &mut HashSet<String>) {
+    match pat {
+        Pattern::Empty | Pattern::Value(_) => (),
+        Pattern::Variable(s) => { acc.remove(s); }
+        Pattern::Tuple(pats) => pats.iter().for_each(|p| remove_bound_variables(p, acc)),
     }
 }

@@ -1,6 +1,6 @@
-use std::{thread, time::Duration};
+use std::{collections::HashMap, thread, time::Duration};
 
-use crate::{interpreter::{Interpreter, environment::{EnvPtr, Environment}, runtime_error::RuntimeError, runtime_value::{RuntimeValue, Value}}, parser::{AST, Pattern}};
+use crate::{interpreter::{Interpreter, environment::EnvPtr, runtime_error::RuntimeError, runtime_value::{RuntimeValue, Value}}, parser::{AST, Pattern}};
 
 use uuid::Uuid;
 
@@ -10,6 +10,7 @@ pub fn install(env: &EnvPtr) {
     env.insert("send".into(), Value::Builtin(builtin_send).into());
     env.insert("receive".into(), Value::Builtin(builtin_receive).into());
     env.insert("print".into(), Value::Builtin(builtin_print).into());
+    env.insert("printWithLabels".into(), Value::Builtin(builtin_print_with_labels).into());
     env.insert("sleep".into(), Value::Builtin(builtin_sleep).into());
     env.insert("mkuuid".into(), Value::Builtin(builtin_mkuuid).into());
     env.insert("exitAfterTimeout".into(), Value::Builtin(builtin_exit_after_timeout).into());
@@ -26,7 +27,7 @@ fn builtin_spawn(interpreter: &mut Interpreter, runtime_value: RuntimeValue) -> 
 
     let thread = match runtime_value.value {
         Value::Closure { parameter: None, body, env } => {
-            interpreter.env = env;
+            interpreter.env.extend(env);
             thread::spawn(move || new_interpreter.eval(body))
         }
         Value::Builtin(f) => thread::spawn(move || f(&mut new_interpreter, Value::Unit.into())),
@@ -62,8 +63,8 @@ fn builtin_receive(interpreter: &mut Interpreter, runtime_value: RuntimeValue) -
         match runtime_value.value {
             Value::List(handlers) => {
                 for handler in handlers {
-                    if let Some(res) = process_handler(interpreter, &message, handler) {
-                        return res
+                    if let Some(res) = process_handler(interpreter, &message, handler)? {
+                        return Ok(res)
                     }
                 }
                 Err(RuntimeError::RuntimeError)
@@ -75,22 +76,12 @@ fn builtin_receive(interpreter: &mut Interpreter, runtime_value: RuntimeValue) -
     }
 }
 
-fn process_handler(interpreter: &mut Interpreter, message: &RuntimeValue, handler: RuntimeValue) -> Option<Result<RuntimeValue, RuntimeError>> {
+fn process_handler(interpreter: &mut Interpreter, message: &RuntimeValue, handler: RuntimeValue) -> Result<Option<RuntimeValue>, RuntimeError> {
     let rt_value = match handler.value {
         Value::Closure { parameter: Some(variable), body, env } if variable == "msg" => {
-            let old_env = std::mem::replace(&mut interpreter.env, env);
-
-            interpreter.env.insert(variable, message.clone());
-
-            let result = match interpreter.eval(body) {
-                Ok(rt) => rt,
-                Err(e) => return Some(Err(e))
-            };
-            interpreter.env = old_env;
-
-            result
+            interpreter.eval_closure(Some(variable), Some(message.clone()), body, env)?
         }
-        _ => return Some(Err(RuntimeError::RuntimeError))
+        _ => return Err(RuntimeError::RuntimeError)
     };
 
     match rt_value.value {
@@ -101,25 +92,23 @@ fn process_handler(interpreter: &mut Interpreter, message: &RuntimeValue, handle
 
             match (v1.value, v2.value) {
                 (Value::Boolean(true), Value::Closure { parameter: None, body, env }) => {
-                    let old_env = std::mem::replace(&mut interpreter.env, env);
-
-                    let result = match interpreter.eval(body) {
-                        Ok(rt) => rt,
-                        Err(e) => return Some(Err(e))
-                    };
-                    interpreter.env = old_env;
-
-                    Some(Ok(result))
+                    let result = Some(interpreter.eval_closure(None, None, body, env));
+                    result.transpose()
                 }
-                _ => None
+                _ => Ok(None)
             }
         }
-        _ => Some(Err(RuntimeError::RuntimeError))
+        _ => Err(RuntimeError::RuntimeError)
     }
 }
 
 fn builtin_print(_interpreter: &mut Interpreter, runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
     println!("{}", runtime_value.value);
+    Ok(Value::Unit.into())
+}
+
+fn builtin_print_with_labels(_interpreter: &mut Interpreter, runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
+    println!("{}", runtime_value);
     Ok(Value::Unit.into())
 }
 
@@ -136,7 +125,7 @@ fn builtin_mkuuid(_interpreter: &mut Interpreter, _runtime_value: RuntimeValue) 
     Ok(Value::PID(uuid).into())
 }
 
-fn builtin_exit_after_timeout(interpreter: &mut Interpreter, runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
+fn builtin_exit_after_timeout(_interpreter: &mut Interpreter, runtime_value: RuntimeValue) -> Result<RuntimeValue, RuntimeError> {
     let body = AST::Lambda(
         Some("exit_code".to_string()),
         Box::new(AST::Lambda(
@@ -158,7 +147,7 @@ fn builtin_exit_after_timeout(interpreter: &mut Interpreter, runtime_value: Runt
         ))
     );
 
-    let env = Environment::new_child(interpreter.env.clone());
+    let mut env = HashMap::new();
     env.insert("authority".to_string(), runtime_value);
 
     Ok(Value::Closure { 

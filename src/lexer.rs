@@ -55,7 +55,7 @@ pub enum Token {
     #[regex(r"[a-zA-Z\_]+[0-9]*", |id| id.slice().to_string())]
     Identifier(String),
 
-    #[regex(r"`\{[a-zA-Z]+\}`", |sl| sl.slice().trim_matches('`').to_string())]
+    #[regex(r"`\{[a-zA-Z]*\}`", |sl| sl.slice().trim_matches('`').to_string())]
     SecurityLevel(String),
 
     #[token("case")]
