@@ -67,10 +67,8 @@ fn check_observable(ctx: &Ctx) -> Result<(), StaticIfcError> {
 
 fn bind_pattern_variables(pattern: &Pattern, level: &Level, ctx: &mut Ctx) {
     match pattern {
-        Pattern::Single(ast) => {
-            if let AST::Identifier(name) = ast.as_ref() {
-                ctx.insert_variable(name.clone(), level.clone());
-            }
+        Pattern::Variable(name) => {
+            ctx.insert_variable(name.clone(), level.clone());
         }
 
         Pattern::Tuple(patterns) => {
@@ -79,7 +77,7 @@ fn bind_pattern_variables(pattern: &Pattern, level: &Level, ctx: &mut Ctx) {
             }
         }
 
-        Pattern::Empty => {}
+        Pattern::Empty | Pattern::Value(_) => {}
     }
 }
 
@@ -250,7 +248,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<Level, StaticIfcError> {
             level
         }
         AST::Tuple(values) | AST::List(values) | AST::Operation(_, values) => unite(values, ctx)?,
-        AST::Unit | AST::Wildcard | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) => {
+        AST::Unit | AST::Unreachable | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) => {
             Level::new()
         }
         AST::Identifier(ident) => match ctx.get(ident) {
