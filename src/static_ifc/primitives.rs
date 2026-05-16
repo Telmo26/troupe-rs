@@ -31,6 +31,10 @@ pub enum PrimitiveApp<'a> {
         value: &'a AST,
     },
 
+    Exit {
+        value: &'a AST,
+    },
+
     Self_,
 
     MkUuid,
@@ -87,6 +91,8 @@ pub fn match_primitive<'a>(ast: &'a AST) -> Option<PrimitiveApp<'a>> {
                     "exitAfterTimeout" => {
                         return Some(PrimitiveApp::ExitAfterTimeout { value: argument });
                     }
+
+                    "exit" => return Some(PrimitiveApp::Exit { value: argument }),
 
                     _ => {}
                 }

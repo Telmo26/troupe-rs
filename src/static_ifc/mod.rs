@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    parser::{Pattern, AST},
-    static_ifc::primitives::{match_primitive, PrimitiveApp},
+    parser::{AST, Pattern},
+    static_ifc::primitives::{PrimitiveApp, match_primitive}, trustmap::TrustMap,
 };
 
 mod primitives;
@@ -22,19 +22,30 @@ fn strict_level() -> Level {
     HashSet::from(["@strict_private_label".to_string()])
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Ctx {
     level: Level,
+    trustmap: Option<TrustMap>,
     strict: bool,
     map: HashMap<String, Level>,
 }
 
 impl Ctx {
-    fn new(strict: bool) -> Self {
+    fn new(trustmap: Option<TrustMap>, strict: bool) -> Self {
         Self {
             map: HashMap::new(),
             level: Level::new(),
             strict,
+            trustmap
+        }
+    }
+
+    fn fork(&self) -> Ctx {
+        Self { 
+            level: Level::new(), 
+            trustmap: self.trustmap.clone(), 
+            strict: self.strict, 
+            map: self.map.clone() 
         }
     }
 
@@ -169,7 +180,8 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<Level, StaticIfcError> {
                     | PrimitiveApp::Send { value }
                     | PrimitiveApp::Receive { value }
                     | PrimitiveApp::Spawn { value }
-                    | PrimitiveApp::ExitAfterTimeout { value } => {
+                    | PrimitiveApp::ExitAfterTimeout { value }
+                    | PrimitiveApp::Exit { value } => {
                         let value_level = ifc_check(value, ctx)?;
 
                         if !value_level.is_empty() {
@@ -205,8 +217,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<Level, StaticIfcError> {
             }
         }
         AST::Lambda(arg, body) => {
-            let mut fresh_ctx = Ctx::new(ctx.strict);
-            fresh_ctx.map = ctx.map.clone();
+            let mut fresh_ctx = ctx.fork();
 
             if let Some(arg) = arg {
                 let arg_level = if ctx.strict {
@@ -255,7 +266,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<Level, StaticIfcError> {
             Some(level) => level.to_owned(),
             None => match ident.as_str() {
                 "authority" | "exitAfterTimeout" | "sleep" | "send" | "print" | "receive"
-                | "spawn" | "self" | "mkuuid" | "declassify" => Level::new(),
+                | "spawn" | "self" | "mkuuid" | "declassify" | "exit" => Level::new(),
                 _ => return Err(StaticIfcError::UnknownVariable(ident.to_owned())),
             },
         },
@@ -263,7 +274,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<Level, StaticIfcError> {
     })
 }
 
-pub fn static_ifc_check(ast: &AST, strict: bool) -> Result<Level, StaticIfcError> {
-    let mut ctx = Ctx::new(strict);
+pub fn static_ifc_check(ast: &AST, trustmap: Option<TrustMap>, strict: bool) -> Result<Level, StaticIfcError> {
+    let mut ctx = Ctx::new(trustmap, strict);
     ifc_check(ast, &mut ctx)
 }

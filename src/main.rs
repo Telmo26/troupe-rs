@@ -27,7 +27,8 @@ struct Args {
     trustmap: Option<PathBuf>
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let file_text = std::fs::read_to_string(args.file)?;
     let trustmap = if let Some(tm_path) = args.trustmap {
@@ -44,11 +45,13 @@ fn main() -> anyhow::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
-    type_check(&ast).expect("Type check failed");
-    static_ifc_check(&ast, false).expect("Static analysis failed.");
+    // dbg!(&ast);
 
-    let mut interpreter = Interpreter::default();
-    interpreter.run(ast);
+    // type_check(&ast).expect("Type check failed");
+    // static_ifc_check(&ast, trustmap, false).expect("Static analysis failed.");
+
+    let interpreter = Interpreter::new();
+    interpreter.run(ast).await;
 
     Ok(())
 }

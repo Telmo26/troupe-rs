@@ -13,9 +13,9 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new_child(parent: EnvPtr) -> EnvPtr {
+    pub fn new_child(parent: &EnvPtr) -> EnvPtr {
         Arc::new(Environment {
-            parent: Some(parent),
+            parent: Some(parent.clone()),
             bindings: DashMap::new(),
         })
     }

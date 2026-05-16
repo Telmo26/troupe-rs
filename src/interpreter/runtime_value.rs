@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet, LinkedList}, fmt::Display};
 
 use uuid::Uuid;
 
-use crate::{interpreter::{Interpreter, runtime_error::RuntimeError}, parser::AST};
+use crate::{interpreter::{Interpreter, builtins::Builtin, process::Process, runtime_error::RuntimeError}, parser::AST};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeValue {
@@ -57,8 +57,6 @@ impl Display for RuntimeValue {
     }
 }
 
-pub type BuiltinFn = fn(&mut Interpreter, RuntimeValue) -> Result<RuntimeValue, RuntimeError>;
-
 #[derive(Debug, Clone)]
 pub enum Value {
     Unit,
@@ -72,7 +70,7 @@ pub enum Value {
         body: AST,
         env: HashMap<String, RuntimeValue>,
     },
-    Builtin(BuiltinFn),
+    Builtin(Builtin),
     PID(Uuid),
     Label(SecurityLabel),
     Authority, // ???

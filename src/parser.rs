@@ -160,8 +160,11 @@ impl<'a> Parser<'a> {
                     break;
                 }
 
-                // This is for tuple or list function parameters
+                // This is for tuple, parenthesized expressions or list function parameters
                 (Token::LeftParenthesis, _) | (Token::LeftBracket, _) => {
+                    if min_bp == FUNCTION_CALL_BINDING_POWER {
+                        break;
+                    }
                     let argument = Box::new(self.parse_expr(FUNCTION_CALL_BINDING_POWER)?);
                     lhs = AST::FunctionCall {
                         callee: Box::new(lhs),
@@ -196,6 +199,9 @@ impl<'a> Parser<'a> {
                 }
 
                 (token, _) if is_value(token) => {
+                    if min_bp == FUNCTION_CALL_BINDING_POWER {
+                        break;
+                    }
                     let argument = parse_value(self.next().unwrap().0);
                     lhs = AST::FunctionCall {
                         callee: Box::new(lhs),
