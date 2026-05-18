@@ -22,7 +22,51 @@ fn strict_level() -> Level {
     HashSet::from(["@strict_private_label".to_string()])
 }
 
-type IfcExpEval = (Level, bool);
+#[derive(Clone, Copy, Debug)]
+enum Safety {
+    Safe,
+    Dangerous,
+    DangerousMaybe,
+}
+
+impl Safety {
+    fn with2(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Dangerous, _) => self,
+            (_, Self::Dangerous | Self::DangerousMaybe) => other,
+            _ => self,
+        }
+    }
+
+    fn with(&mut self, other: Self) {
+        *self = self.with2(other)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct IfcExpEval {
+    level: Level,
+    is_arg: bool,
+    safety: Safety,
+}
+
+impl IfcExpEval {
+    fn new(level: Level, safety: Safety, is_arg: bool) -> Self {
+        Self {
+            level,
+            is_arg,
+            safety,
+        }
+    }
+
+    fn empty(safety: Safety) -> Self {
+        Self {
+            safety,
+            level: HashSet::new(),
+            is_arg: false,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Ctx {
@@ -34,16 +78,37 @@ struct Ctx {
 impl Ctx {
     fn new(strict: bool) -> Self {
         let map = [
-            ("authority".to_string(), (Level::new(), false)),
-            ("exitAfterTimeout".to_string(), (Level::new(), false)),
-            ("sleep".to_string(), (Level::new(), false)),
-            ("send".to_string(), (Level::new(), false)),
-            ("print".to_string(), (Level::new(), false)),
-            ("receive".to_string(), (Level::new(), false)),
-            ("spawn".to_string(), (Level::new(), false)),
-            ("self".to_string(), (Level::new(), false)),
-            ("mkuuid".to_string(), (Level::new(), false)),
-            ("declassify".to_string(), (Level::new(), false)),
+            ("authority".to_string(), IfcExpEval::empty(Safety::Safe)),
+            (
+                "exitAfterTimeout".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "sleep".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "send".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "print".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "receive".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "spawn".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            (
+                "self".to_string(),
+                IfcExpEval::empty(Safety::DangerousMaybe),
+            ),
+            ("mkuuid".to_string(), IfcExpEval::empty(Safety::Safe)),
+            ("declassify".to_string(), IfcExpEval::empty(Safety::Safe)),
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -65,15 +130,15 @@ impl Ctx {
 }
 
 fn unite(values: &[AST], ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
-    let mut level = Level::new();
-    let mut is_safe = true;
+    let mut e = IfcExpEval::empty(Safety::Safe);
     for value in values {
         let res = ifc_check(value, ctx)?;
-        level.extend(res.0);
-        is_safe &= res.1;
+        e.level.extend(res.level);
+        e.safety.with(res.safety);
+        e.is_arg |= res.is_arg;
     }
 
-    Ok((level, is_safe))
+    Ok(e)
 }
 
 fn bind_pattern_variables(pattern: &Pattern, e: &IfcExpEval, ctx: &mut Ctx) {
@@ -103,7 +168,7 @@ where
     f(&mut fresh_ctx)
 }
 
-fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> {
+fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
     Ok(match ast {
         AST::Let {
             name,
@@ -111,15 +176,16 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
             body,
             rec,
         } => {
-            let (value_level, var_is_safe) = if *rec {
+            let var_e = if *rec {
                 let mut rec_ctx = ctx.clone();
 
-                let initial = (
+                let initial = IfcExpEval::new(
                     if ctx.strict {
                         strict_level()
                     } else {
                         Level::new()
                     },
+                    Safety::Safe,
                     false,
                 );
 
@@ -132,61 +198,55 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
 
             with_pattern_bound(
                 name,
-                &(value_level.clone(), var_is_safe),
+                &IfcExpEval::new(var_e.level.clone(), var_e.safety, false),
                 ctx,
                 |fresh_ctx| {
-                    let (mut body_level, inexpr_is_safe) = ifc_check(body, fresh_ctx)?;
-                    body_level.extend(value_level.clone());
-                    Ok((body_level, inexpr_is_safe))
+                    let mut in_e = ifc_check(body, fresh_ctx)?;
+                    in_e.level.extend(var_e.level.clone());
+                    Ok(in_e)
                 },
             )?
         }
 
         AST::Case(expr, clauses) => {
-            let (expr_level, expr_is_safe) = ifc_check(expr, ctx)?;
+            let expr_e = ifc_check(expr, ctx)?;
 
             let old_pc = ctx.level.clone();
 
-            ctx.level.extend(expr_level.clone());
+            ctx.level.extend(expr_e.level.clone());
 
-            let mut result_level = expr_level.clone();
-            let mut result_is_safe = true;
+            let mut res = IfcExpEval::new(expr_e.level.clone(), Safety::Safe, false);
 
             for clause in clauses {
-                let (clause_level, clause_is_safe) = with_pattern_bound(
-                    &clause.pattern,
-                    &(expr_level.clone(), expr_is_safe),
-                    ctx,
-                    |clause_ctx| {
-                        if let Some(guard) = &clause.guard {
-                            let (guard_level, _) = ifc_check(guard, clause_ctx)?;
+                let clause_e = with_pattern_bound(&clause.pattern, &expr_e, ctx, |clause_ctx| {
+                    if let Some(guard) = &clause.guard {
+                        let guard_res = ifc_check(guard, clause_ctx)?;
 
-                            clause_ctx.level.extend(guard_level.clone());
+                        clause_ctx.level.extend(guard_res.level.clone());
 
-                            let (mut body_level, body_is_safe) =
-                                ifc_check(&clause.body, clause_ctx)?;
-                            body_level.extend(guard_level);
+                        let mut body_e = ifc_check(&clause.body, clause_ctx)?;
+                        body_e.level.extend(guard_res.level);
 
-                            Ok((body_level, body_is_safe))
-                        } else {
-                            ifc_check(&clause.body, clause_ctx)
-                        }
-                    },
-                )?;
+                        Ok(body_e)
+                    } else {
+                        ifc_check(&clause.body, clause_ctx)
+                    }
+                })?;
 
-                result_level.extend(clause_level);
-                result_is_safe &= clause_is_safe;
+                res.level.extend(clause_e.level);
+                res.safety.with(clause_e.safety);
+                res.is_arg |= clause_e.is_arg;
             }
 
             ctx.level = old_pc;
 
-            (result_level, result_is_safe)
+            res
         }
         AST::FunctionCall { callee, argument } => {
             let mut arg_ctx = ctx.clone();
 
             let mut body_ctx = ctx.clone();
-            let (mut callee_level, calle_is_safe) = ifc_check(callee, &mut body_ctx)?;
+            let callee_e = ifc_check(callee, &mut body_ctx)?;
 
             if let Some(primitive) = match_primitive(ast) {
                 match primitive {
@@ -203,16 +263,33 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
                 }
             }
 
-            let (arg_level, arg_is_safe) = ifc_check(argument, &mut arg_ctx)?;
-            callee_level.extend(arg_level);
+            let arg_e = ifc_check(argument, &mut arg_ctx)?;
 
-            let is_safe = calle_is_safe && arg_is_safe;
+            let mut result = IfcExpEval::new(
+                arg_e.level,
+                callee_e.safety.with2(arg_e.safety),
+                callee_e.is_arg || arg_e.is_arg,
+            );
+            result.level.extend(callee_e.level);
 
-            if !is_safe && (!ctx.level.is_empty() || !callee_level.is_empty()) {
-                return Err(StaticIfcError::IOOperationOnSecretVariables);
+            match result.safety {
+                Safety::Dangerous => {
+                    if !ctx.level.is_empty() || !result.level.is_empty() {
+                        return Err(StaticIfcError::IOOperationOnSecretVariables);
+                    }
+                }
+                Safety::DangerousMaybe => {
+                    if !ctx.level.is_empty() {
+                        return Err(StaticIfcError::IOOperationOnSecretVariables);
+                    }
+                    if result.is_arg {
+                        result.safety = Safety::Dangerous
+                    }
+                }
+                _ => (),
             }
 
-            (callee_level, is_safe)
+            result
         }
         AST::Lambda(arg, body) => {
             let mut fresh_ctx = Ctx::new(ctx.strict);
@@ -224,7 +301,10 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
                 } else {
                     Level::new()
                 };
-                fresh_ctx.insert_variable(arg.to_owned(), (arg_level, true));
+                fresh_ctx.insert_variable(
+                    arg.to_owned(),
+                    IfcExpEval::new(arg_level, Safety::Safe, true),
+                );
             }
 
             ifc_check(body, &mut fresh_ctx)?
@@ -233,23 +313,25 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
             let old_ctx_level = ctx.level.clone();
 
             // We first check if and extend the ctx level.
-            let (if_level, if_is_safe) = ifc_check(ife, ctx)?;
-            let mut level = if_level.clone();
-            let mut is_safe = if_is_safe;
-            ctx.level.extend(if_level);
+            let if_e = ifc_check(ife, ctx)?;
+
+            let mut result = if_e.clone();
+            ctx.level.extend(if_e.level);
 
             // Then check the then
-            let (then_level, then_is_safe) = ifc_check(then, ctx)?;
-            level.extend(then_level.clone());
-            is_safe &= then_is_safe;
+            let then_e = ifc_check(then, ctx)?;
+            result.level.extend(then_e.level.clone());
+            result.safety.with(then_e.safety);
+            result.is_arg |= then_e.is_arg;
 
             if let Some(els) = els {
                 // If there is an else, we need to extend the ctx level
                 // since it depends on the then branch.
-                ctx.level.extend(then_level);
-                let (els_level, els_is_safe) = ifc_check(els, ctx)?;
-                is_safe &= els_is_safe;
-                level.extend(els_level);
+                ctx.level.extend(then_e.level);
+                let els_e = ifc_check(els, ctx)?;
+                result.safety.with(els_e.safety);
+                result.is_arg |= els_e.is_arg;
+                result.level.extend(els_e.level);
 
                 // And we also need to recheck the then branch since it depends on els.
                 // The level evaluation should be the same so we drop it.
@@ -258,11 +340,11 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
 
             ctx.level = old_ctx_level;
 
-            (level, is_safe)
+            result
         }
         AST::Tuple(values) | AST::List(values) | AST::Operation(_, values) => unite(values, ctx)?,
         AST::Unit | AST::Unreachable | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) => {
-            (Level::new(), true)
+            IfcExpEval::empty(Safety::Safe)
         }
         AST::Identifier(ident) => match ctx.get(ident) {
             Some(level) => level.to_owned(),
@@ -274,12 +356,12 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<(Level, bool), StaticIfcError> 
             } else {
                 Level::from([level.to_owned()])
             };
-            (level, true)
+            IfcExpEval::new(level, Safety::Safe, false)
         }
     })
 }
 
 pub fn static_ifc_check(ast: &AST, strict: bool) -> Result<Level, StaticIfcError> {
     let mut ctx = Ctx::new(strict);
-    ifc_check(ast, &mut ctx).map(|r| r.0)
+    ifc_check(ast, &mut ctx).map(|r| r.level)
 }
