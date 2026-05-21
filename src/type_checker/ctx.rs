@@ -90,7 +90,6 @@ impl Ctx {
     pub fn insert_new_variable_with_set(&mut self, var: &Pattern, t: Type, free_vars: &[u32]) {
         match var {
             Pattern::Variable(child) => {
-                dbg!(child);
                 self.insert(child.to_owned(), Scheme::new(t, free_vars.to_vec()));
             }
             Pattern::Tuple(variables) => {

@@ -19,7 +19,12 @@ pub fn parse_value(token: Token) -> AST {
         Token::StringLiteral(s) => AST::StringLiteral(s),
         Token::Identifier(i) => AST::Identifier(i),
         Token::Boolean(b) => AST::Boolean(b), 
-        Token::SecurityLevel(s) => AST::SecurityLevel(s),
+        Token::SecurityLevel(s) => {
+            let levels = s[1..s.len()-1].split(",")
+                .map(|l| l.trim().to_string())
+                .collect();
+            AST::SecurityLevel(levels)
+        }
         _ => unreachable!()
     }
 }

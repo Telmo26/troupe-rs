@@ -22,7 +22,7 @@ pub enum AST {
     Boolean(bool),
     Identifier(String),
     Lambda(Option<String>, Box<AST>),
-    SecurityLevel(String),
+    SecurityLevel(Vec<String>),
 
     Unreachable
 }

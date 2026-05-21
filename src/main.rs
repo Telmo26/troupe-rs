@@ -44,8 +44,10 @@ fn main() -> anyhow::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
+    dbg!(&ast);
+
     type_check(&ast).expect("Type check failed");
-    static_ifc_check(&ast, false).expect("Static analysis failed.");
+    static_ifc_check(&ast, false, trustmap).expect("Static analysis failed.");
 
     let mut interpreter = Interpreter::default();
     interpreter.run(ast);

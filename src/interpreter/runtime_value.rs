@@ -111,7 +111,9 @@ impl TryFrom<AST> for Value {
             AST::Boolean(b) => Ok(Value::Boolean(b)),
             AST::Number(n) => Ok(Value::Number(n)),
             AST::StringLiteral(s) => Ok(Value::String(s)),
-            AST::SecurityLevel(level) => Ok(Value::Label(SecurityLabel::try_from(level)?)),
+            AST::SecurityLevel(levels) => Ok(Value::Label(SecurityLabel {
+                labels: levels.into_iter().collect()
+            })),
             _ => Err(RuntimeError::RuntimeError)
         }
     }
@@ -157,21 +159,6 @@ impl Display for Value {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SecurityLabel {
     labels: HashSet<String>
-}
-
-impl TryFrom<String> for SecurityLabel {
-    type Error = RuntimeError;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.starts_with('{') && value.ends_with('}') {
-            let individual_labels = value[1..value.len() - 1].split(",").map(|l| l.to_string());
-            let labels = individual_labels.collect();
-            Ok(SecurityLabel {
-                labels,
-            })
-        } else {
-            Err(RuntimeError::RuntimeError)
-        }
-    }
 }
 
 impl Display for SecurityLabel {

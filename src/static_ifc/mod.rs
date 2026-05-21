@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    parser::{Pattern, AST},
-    static_ifc::primitives::{match_primitive, PrimitiveApp},
+    parser::{AST, Pattern},
+    static_ifc::primitives::{PrimitiveApp, match_primitive}, trustmap::TrustMap,
 };
 
 mod primitives;
@@ -73,10 +73,11 @@ struct Ctx {
     level: Level,
     strict: bool,
     map: HashMap<String, IfcExpEval>,
+    trustmap: Option<TrustMap>
 }
 
 impl Ctx {
-    fn new(strict: bool) -> Self {
+    fn new(strict: bool, trustmap: Option<TrustMap>) -> Self {
         let map = [
             ("authority".to_string(), IfcExpEval::empty(Safety::Safe)),
             (
@@ -117,6 +118,7 @@ impl Ctx {
             map,
             level: Level::new(),
             strict,
+            trustmap
         }
     }
 
@@ -259,6 +261,26 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                         ifc_check(authority, ctx)?;
 
                         return ifc_check(target, ctx);
+                    },
+                    PrimitiveApp::Send { target, value } => {
+                        let ifc_exp = ifc_check(value, ctx)?;
+                        
+                        if let AST::StringLiteral(destination) = target {
+                            match &ctx.trustmap {
+                                Some(map) if let Some(allowed_levels) = map.get(destination) => {
+                                    if allowed_levels.is_superset(&ifc_exp.level) {
+                                        return Ok(IfcExpEval::empty(Safety::Safe))
+                                    } else {
+                                        return Err(StaticIfcError::IOOperationOnSecretVariables)
+                                    }
+                                },
+                                _ => if ifc_exp.level.is_empty() {
+                                    return Ok(IfcExpEval::empty(Safety::Safe))
+                                } else {
+                                    return Err(StaticIfcError::IOOperationOnSecretVariables)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -292,7 +314,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             result
         }
         AST::Lambda(arg, body) => {
-            let mut fresh_ctx = Ctx::new(ctx.strict);
+            let mut fresh_ctx = Ctx::new(ctx.strict, ctx.trustmap.clone());
             fresh_ctx.map = ctx.map.clone();
 
             if let Some(arg) = arg {
@@ -351,17 +373,19 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             None => return Err(StaticIfcError::UnknownVariable(ident.to_owned())),
         },
         AST::SecurityLevel(level) => {
-            let level = if level == "{}" {
+            let level = if level.is_empty() {
                 Level::new()
             } else {
-                Level::from([level.to_owned()])
+                level.iter()
+                    .map(|l| l.to_owned())
+                    .collect()
             };
             IfcExpEval::new(level, Safety::Safe, false)
         }
     })
 }
 
-pub fn static_ifc_check(ast: &AST, strict: bool) -> Result<Level, StaticIfcError> {
-    let mut ctx = Ctx::new(strict);
+pub fn static_ifc_check(ast: &AST, strict: bool, trustmap: Option<TrustMap>) -> Result<Level, StaticIfcError> {
+    let mut ctx = Ctx::new(strict, trustmap);
     ifc_check(ast, &mut ctx).map(|r| r.level)
 }
