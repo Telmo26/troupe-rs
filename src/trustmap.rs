@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, BTreeSet};
 
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct TrustMap {
-    map: HashMap<String, HashSet<String>>
+    map: HashMap<String, BTreeSet<String>>
 }
 
 impl TrustMap {
@@ -23,7 +23,7 @@ impl TrustMap {
         })
     }
 
-    pub fn get(&self, id: &str) -> Option<&HashSet<String>> {
+    pub fn get(&self, id: &str) -> Option<&BTreeSet<String>> {
         self.map.get(id)
     }
 }

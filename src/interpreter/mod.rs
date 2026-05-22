@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet, LinkedList}, sync::Arc, thread::JoinHandle};
+use std::{collections::{HashMap, BTreeSet, LinkedList}, sync::Arc, thread::JoinHandle};
 
 use crate::{interpreter::environment::Environment, parser::{AST, MatchClause, Pattern}};
 
@@ -311,13 +311,13 @@ impl Interpreter {
     }
 }
 
-fn free_variables(body: &AST) -> HashSet<String> {
-    let mut fv = HashSet::new();
+fn free_variables(body: &AST) -> BTreeSet<String> {
+    let mut fv = BTreeSet::new();
     compute_fv(body, &mut fv);
     fv
 }
 
-fn compute_fv(body: &AST, acc: &mut HashSet<String>) {
+fn compute_fv(body: &AST, acc: &mut BTreeSet<String>) {
     match body {
         AST::Let { name, value, body, rec } => {
             compute_fv(body, acc);
@@ -362,7 +362,7 @@ fn compute_fv(body: &AST, acc: &mut HashSet<String>) {
     }
 }
 
-fn remove_bound_variables(pat: &Pattern, acc: &mut HashSet<String>) {
+fn remove_bound_variables(pat: &Pattern, acc: &mut BTreeSet<String>) {
     match pat {
         Pattern::Empty | Pattern::Value(_) => (),
         Pattern::Variable(s) => { acc.remove(s); }

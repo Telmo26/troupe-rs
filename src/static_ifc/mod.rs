@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, BTreeSet};
 
 use crate::{
     parser::{AST, Pattern},
@@ -16,10 +16,10 @@ pub enum StaticIfcError {
     InvalidDeclassification,
 }
 
-type Level = HashSet<String>;
+type Level = BTreeSet<String>;
 
 fn strict_level() -> Level {
-    HashSet::from(["@strict_private_label".to_string()])
+    BTreeSet::from(["@strict_private_label".to_string()])
 }
 
 #[derive(Clone, Debug, Default)]
@@ -64,11 +64,11 @@ impl Ctx {
             ),
             (
                 "send".to_string(),
-                IfcExpEval::new(Level::new(), false, vec![Some(HashSet::new())]),
+                IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
             ),
             (
                 "print".to_string(),
-                IfcExpEval::new(Level::new(), false, vec![Some(HashSet::new())]),
+                IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
             ),
             (
                 "receive".to_string(),
@@ -259,7 +259,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                                 }
                             },
                             _ => if ifc_exp.level.is_empty() {
-                                return Ok(IfcExpEval::new(Level::new(), ifc_exp.is_arg, vec![Some(HashSet::new())]))
+                                return Ok(IfcExpEval::new(Level::new(), ifc_exp.is_arg, vec![Some(BTreeSet::new())]))
                             } else {
                                 return Err(StaticIfcError::IOOperationOnSecretVariables)
                             }

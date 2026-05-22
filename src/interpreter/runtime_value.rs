@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet, LinkedList}, fmt::Display};
+use std::{collections::{HashMap, BTreeSet, LinkedList}, fmt::Display};
 
 use uuid::Uuid;
 
@@ -159,7 +159,7 @@ impl Display for Value {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SecurityLabel {
-    labels: HashSet<String>
+    labels: BTreeSet<String>
 }
 
 impl Display for SecurityLabel {

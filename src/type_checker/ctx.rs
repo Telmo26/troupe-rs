@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, BTreeSet};
 
 use crate::{
     parser::Pattern,
@@ -135,8 +135,8 @@ impl Ctx {
         ty
     }
 
-    pub fn get_context_free_variables(&self) -> HashSet<u32> {
-        let mut result = HashSet::new();
+    pub fn get_context_free_variables(&self) -> BTreeSet<u32> {
+        let mut result = BTreeSet::new();
 
         for scheme in self.name_map.values() {
             let mut fv = scheme.ty.get_free_variables();
