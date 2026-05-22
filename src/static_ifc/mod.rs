@@ -68,7 +68,7 @@ impl IfcExpEval {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Ctx {
     level: Level,
     strict: bool,
@@ -262,26 +262,33 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
                         return ifc_check(target, ctx);
                     },
-                    PrimitiveApp::Send { target, value } => {
+                    PrimitiveApp::Send { 
+                        target: AST::StringLiteral(destination), 
+                        value 
+                    } => {
                         let ifc_exp = ifc_check(value, ctx)?;
-                        
-                        if let AST::StringLiteral(destination) = target {
-                            match &ctx.trustmap {
-                                Some(map) if let Some(allowed_levels) = map.get(destination) => {
-                                    if allowed_levels.is_superset(&ifc_exp.level) {
-                                        return Ok(IfcExpEval::empty(Safety::Safe))
-                                    } else {
-                                        return Err(StaticIfcError::IOOperationOnSecretVariables)
-                                    }
-                                },
-                                _ => if ifc_exp.level.is_empty() {
-                                    return Ok(IfcExpEval::empty(Safety::Safe))
+                        let safety = if ifc_exp.is_arg {
+                            Safety::Dangerous
+                        } else {
+                            Safety::Safe
+                        };
+
+                        match &ctx.trustmap {
+                            Some(map) if let Some(allowed_levels) = map.get(destination) => {
+                                if allowed_levels.is_superset(&ifc_exp.level) {
+                                    return Ok(IfcExpEval::new(Level::new(), safety, false))
                                 } else {
                                     return Err(StaticIfcError::IOOperationOnSecretVariables)
                                 }
+                            },
+                            _ => if ifc_exp.level.is_empty() {
+                                return Ok(IfcExpEval::new(Level::new(), safety, false))
+                            } else {
+                                return Err(StaticIfcError::IOOperationOnSecretVariables)
                             }
                         }
                     }
+                    _ => ()
                 }
             }
 

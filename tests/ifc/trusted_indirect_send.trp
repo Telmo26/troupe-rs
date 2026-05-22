@@ -1,0 +1,5 @@
+let fun hello x = send ("trusted", x)
+    val x = 3 raisedTo `{high}`
+in
+    hello x
+end
