@@ -3,20 +3,13 @@ use std::path::PathBuf;
 use clap::Parser;
 use logos::Logos;
 
-mod lexer;
-mod parser;
-mod type_checker;
-mod static_ifc;
-mod interpreter;
-mod trustmap;
-
-use crate::{
-    lexer::Token, 
-    parser::parse, 
-    type_checker::type_check,
-    static_ifc::static_ifc_check,
-    interpreter::Interpreter, 
-    trustmap::TrustMap, 
+use troupe_rs::{
+    TrustMap,
+    Token,
+    parse,
+    type_check,
+    static_ifc_check,
+    Interpreter
 };
 
 #[derive(Parser, Debug)]
@@ -30,6 +23,7 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let file_text = std::fs::read_to_string(args.file)?;
+    
     let trustmap = if let Some(tm_path) = args.trustmap {
         let json = std::fs::read_to_string(tm_path)?;
         Some(TrustMap::from_json(&json)?)

@@ -27,6 +27,38 @@ pub enum AST {
     Unreachable
 }
 
+impl AST {
+    pub fn contains_identifier(&self, id: &str) -> bool {
+        use AST::*;
+        match self {
+            Identifier(ident) if ident == id => true,
+            Unit | Number(_) | StringLiteral(_) | Boolean(_) | SecurityLevel(_) | Unreachable | Identifier(_) => false,
+            
+            Let { value, .. } => value.contains_identifier(id),
+            FunctionCall { callee, argument } => callee.contains_identifier(id) || argument.contains_identifier(id),
+            Operation(_, values) | Tuple(values) | List(values) => values.iter().any(|v| v.contains_identifier(id)),
+            Conditional(cond, b1, b2) => {
+                let b2 = match b2 {
+                    None => false,
+                    Some(branch) => branch.contains_identifier(id)
+                };
+                cond.contains_identifier(id) || b1.contains_identifier(id) || b2
+            },
+            Case(value, clauses) => {
+                let clauses_bool = clauses.iter().any(|c| {
+                    let guard = match c.guard.as_ref() {
+                        None => false,
+                        Some(g) => g.contains_identifier(id)
+                    };
+                    c.body.contains_identifier(id) || guard
+                });
+                value.contains_identifier(id) || clauses_bool
+            },
+            Lambda(_, body) => body.contains_identifier(id)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
     Variable(String),

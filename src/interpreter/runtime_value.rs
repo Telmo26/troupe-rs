@@ -20,6 +20,7 @@ impl RuntimeValue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_type_label(self, label: SecurityLabel) -> RuntimeValue {
         RuntimeValue { 
             value: self.value, 

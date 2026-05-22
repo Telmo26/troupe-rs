@@ -22,6 +22,7 @@ pub fn parse_value(token: Token) -> AST {
         Token::SecurityLevel(s) => {
             let levels = s[1..s.len()-1].split(",")
                 .map(|l| l.trim().to_string())
+                .filter(|s| !s.is_empty()) // If we don't do that the level {} will be parsed as "" instead of lack of level
                 .collect();
             AST::SecurityLevel(levels)
         }

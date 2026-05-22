@@ -108,15 +108,15 @@ impl<'a> Parser<'a> {
             }
             Token::Let => self.parse_let()?,
             Token::Val => {
-                let (name, value) = self.parse_variable()?;
-                self.parse_declaration(false, name, value)?
+                let (name, value, rec) = self.parse_variable()?;
+                self.parse_declaration(name, value, rec)?
             }
             Token::Fun => {
-                let (name, value) = self.parse_function(true)?;
-                self.parse_declaration(true, name, value)?
+                let (name, value, rec) = self.parse_function(true)?;
+                self.parse_declaration(name, value, rec)?
             }
             Token::Fn => {
-                let (_, value) = self.parse_function(false)?;
+                let (_, value, _) = self.parse_function(false)?;
                 value
             }
             Token::Case => self.parse_case()?,
@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
             match res.unwrap() {
                 (Token::SemiColon, _) => {
                     self.next()?;
-                    lhs = self.parse_declaration(false, Pattern::Empty, lhs)?;
+                    lhs = self.parse_declaration(Pattern::Empty, lhs, false)?;
                     break;
                 }
 
@@ -212,9 +212,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let(&mut self) -> Result<AST, ParsingError> {
-        let (rec, (name, value)) = match self.next()? {
-            (Token::Val, _) => (false, self.parse_variable()?),
-            (Token::Fun, _) => (true, self.parse_function(true)?),
+        let (name, value, rec) = match self.next()? {
+            (Token::Val, _) => self.parse_variable()?,
+            (Token::Fun, _) => self.parse_function(true)?,
             (token, span) => {
                 return Err(ParsingError::UnexpectedToken {
                     message: "Invalid binding keyword",
@@ -225,7 +225,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let declaration = self.parse_declaration(rec, name, value);
+        let declaration = self.parse_declaration(name, value, rec);
 
         self.next_if(Token::End)?;
 
@@ -234,9 +234,9 @@ impl<'a> Parser<'a> {
 
     fn parse_declaration(
         &mut self,
-        rec: bool,
         name: Pattern,
         value: AST,
+        rec: bool,
     ) -> Result<AST, ParsingError> {
         self.next_if(Token::In)?;
 
@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_variable(&mut self) -> Result<(Pattern, AST), ParsingError> {
+    fn parse_variable(&mut self) -> Result<(Pattern, AST, bool), ParsingError> {
         match self.peek()? {
             // This is the normal assignment or pattern-matching
             (Token::Identifier(_), _) | (Token::LeftParenthesis, _) => {
@@ -260,7 +260,7 @@ impl<'a> Parser<'a> {
 
                 let value = self.parse_expr(0)?;
 
-                Ok((pattern, value))
+                Ok((pattern, value, false))
             }
 
             (Token::Wildcard, _) => {
@@ -269,7 +269,7 @@ impl<'a> Parser<'a> {
 
                 let value = self.parse_expr(0)?;
 
-                Ok((Pattern::Empty, value))
+                Ok((Pattern::Empty, value, false))
             }
             _ => {
                 let (token, span) = self.next()?;
@@ -283,7 +283,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_function(&mut self, named: bool) -> Result<(Pattern, AST), ParsingError> {
+    fn parse_function(&mut self, named: bool) -> Result<(Pattern, AST, bool), ParsingError> {
         // We get the function's name if it is named
         let name = if named {
             match self.next()? {
@@ -324,18 +324,18 @@ impl<'a> Parser<'a> {
             }
         };
 
-        match self.peek()? {
+        let body = match self.peek()? {
             // We recursively descend if the function has more variables
             (Token::Identifier(_), _) => {
-                let (_, body) = self.parse_function(false)?;
-                Ok((name, AST::Lambda(variable, Box::new(body))))
+                let (_, body, _) = self.parse_function(false)?;
+                AST::Lambda(variable, Box::new(body))
             }
 
             // Otherwise we simply compute the body
             (Token::EqualSign, _) | (Token::Arrow, _) => {
                 self.next()?;
                 let body = Box::new(self.parse_expr(0)?);
-                Ok((name, AST::Lambda(variable, body)))
+                AST::Lambda(variable, body)
             }
 
             _ => {
@@ -347,7 +347,15 @@ impl<'a> Parser<'a> {
                     position: self.position_calculator.compute(span.start),
                 });
             }
-        }
+        };
+
+        let rec = if let Pattern::Variable(var) = &name {
+            body.contains_identifier(var) 
+        } else {
+            false
+        };
+
+        Ok((name, body, rec))
     }
 
     fn parse_conditional(&mut self) -> Result<AST, ParsingError> {

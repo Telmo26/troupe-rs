@@ -22,48 +22,19 @@ fn strict_level() -> Level {
     HashSet::from(["@strict_private_label".to_string()])
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Safety {
-    Safe,
-    Dangerous,
-    DangerousMaybe,
-}
-
-impl Safety {
-    fn with2(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Dangerous, _) => self,
-            (_, Self::Dangerous | Self::DangerousMaybe) => other,
-            _ => self,
-        }
-    }
-
-    fn with(&mut self, other: Self) {
-        *self = self.with2(other)
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct IfcExpEval {
     level: Level,
     is_arg: bool,
-    safety: Safety,
+    argument_constraints: Vec<Option<Level>>,
 }
 
 impl IfcExpEval {
-    fn new(level: Level, safety: Safety, is_arg: bool) -> Self {
+    fn new(level: Level, is_arg: bool, argument_constraints: Vec<Option<Level>>) -> Self {
         Self {
             level,
             is_arg,
-            safety,
-        }
-    }
-
-    fn empty(safety: Safety) -> Self {
-        Self {
-            safety,
-            level: HashSet::new(),
-            is_arg: false,
+            argument_constraints
         }
     }
 }
@@ -79,37 +50,46 @@ struct Ctx {
 impl Ctx {
     fn new(strict: bool, trustmap: Option<TrustMap>) -> Self {
         let map = [
-            ("authority".to_string(), IfcExpEval::empty(Safety::Safe)),
+            (
+                "authority".to_string(), 
+                IfcExpEval::default()
+            ),
             (
                 "exitAfterTimeout".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::default(),
             ),
             (
                 "sleep".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::default(),
             ),
             (
                 "send".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::new(Level::new(), false, vec![Some(HashSet::new())]),
             ),
             (
                 "print".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::new(Level::new(), false, vec![Some(HashSet::new())]),
             ),
             (
                 "receive".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::default(),
             ),
             (
                 "spawn".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::default(),
             ),
             (
                 "self".to_string(),
-                IfcExpEval::empty(Safety::DangerousMaybe),
+                IfcExpEval::default(),
             ),
-            ("mkuuid".to_string(), IfcExpEval::empty(Safety::Safe)),
-            ("declassify".to_string(), IfcExpEval::empty(Safety::Safe)),
+            (
+                "mkuuid".to_string(),
+                IfcExpEval::default(),
+            ),
+            (
+                "declassify".to_string(), 
+                IfcExpEval::default()
+            ),
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -132,11 +112,10 @@ impl Ctx {
 }
 
 fn unite(values: &[AST], ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
-    let mut e = IfcExpEval::empty(Safety::Safe);
+    let mut e = IfcExpEval::default();
     for value in values {
         let res = ifc_check(value, ctx)?;
         e.level.extend(res.level);
-        e.safety.with(res.safety);
         e.is_arg |= res.is_arg;
     }
 
@@ -187,8 +166,8 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                     } else {
                         Level::new()
                     },
-                    Safety::Safe,
                     false,
+                    vec![None]
                 );
 
                 bind_pattern_variables(name, &initial, &mut rec_ctx);
@@ -200,7 +179,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
             with_pattern_bound(
                 name,
-                &IfcExpEval::new(var_e.level.clone(), var_e.safety, false),
+                &IfcExpEval::new(var_e.level.clone(), false, var_e.argument_constraints),
                 ctx,
                 |fresh_ctx| {
                     let mut in_e = ifc_check(body, fresh_ctx)?;
@@ -217,7 +196,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
             ctx.level.extend(expr_e.level.clone());
 
-            let mut res = IfcExpEval::new(expr_e.level.clone(), Safety::Safe, false);
+            let mut res = IfcExpEval::new(expr_e.level.clone(), false, vec![None]);
 
             for clause in clauses {
                 let clause_e = with_pattern_bound(&clause.pattern, &expr_e, ctx, |clause_ctx| {
@@ -236,7 +215,6 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                 })?;
 
                 res.level.extend(clause_e.level);
-                res.safety.with(clause_e.safety);
                 res.is_arg |= clause_e.is_arg;
             }
 
@@ -248,7 +226,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             let mut arg_ctx = ctx.clone();
 
             let mut body_ctx = ctx.clone();
-            let callee_e = ifc_check(callee, &mut body_ctx)?;
+            let mut callee_e = ifc_check(callee, &mut body_ctx)?;
 
             if let Some(primitive) = match_primitive(ast) {
                 match primitive {
@@ -267,22 +245,21 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                         value 
                     } => {
                         let ifc_exp = ifc_check(value, ctx)?;
-                        let safety = if ifc_exp.is_arg {
-                            Safety::Dangerous
-                        } else {
-                            Safety::Safe
-                        };
-
+                        
                         match &ctx.trustmap {
                             Some(map) if let Some(allowed_levels) = map.get(destination) => {
                                 if allowed_levels.is_superset(&ifc_exp.level) {
-                                    return Ok(IfcExpEval::new(Level::new(), safety, false))
+                                    return Ok(IfcExpEval::new(
+                                        Level::new(), 
+                                        ifc_exp.is_arg,
+                                        vec![Some(allowed_levels.clone())]
+                                    ))
                                 } else {
                                     return Err(StaticIfcError::IOOperationOnSecretVariables)
                                 }
                             },
                             _ => if ifc_exp.level.is_empty() {
-                                return Ok(IfcExpEval::new(Level::new(), safety, false))
+                                return Ok(IfcExpEval::new(Level::new(), ifc_exp.is_arg, vec![Some(HashSet::new())]))
                             } else {
                                 return Err(StaticIfcError::IOOperationOnSecretVariables)
                             }
@@ -294,29 +271,27 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
             let arg_e = ifc_check(argument, &mut arg_ctx)?;
 
+            // If the argument is a parameter, the constraint must not be removed,
+            // since we do not know the label of the value to be substituted in
+            if !arg_e.is_arg {
+                // We get the constraint for this level of the call
+                let current_constraint = callee_e.argument_constraints.pop();
+
+                // If the PC label or the value's label is higher than the one authorized by the called function
+                if let Some(Some(allowed_levels)) = current_constraint {
+                    if !allowed_levels.is_superset(&ctx.level) || !allowed_levels.is_superset(&arg_e.level) {
+                        return Err(StaticIfcError::IOOperationOnSecretVariables);
+                    }
+                }
+            }
+            
+            // We propagate the constraints
             let mut result = IfcExpEval::new(
                 arg_e.level,
-                callee_e.safety.with2(arg_e.safety),
                 callee_e.is_arg || arg_e.is_arg,
+                callee_e.argument_constraints,
             );
             result.level.extend(callee_e.level);
-
-            match result.safety {
-                Safety::Dangerous => {
-                    if !ctx.level.is_empty() || !result.level.is_empty() {
-                        return Err(StaticIfcError::IOOperationOnSecretVariables);
-                    }
-                }
-                Safety::DangerousMaybe => {
-                    if !ctx.level.is_empty() {
-                        return Err(StaticIfcError::IOOperationOnSecretVariables);
-                    }
-                    if result.is_arg {
-                        result.safety = Safety::Dangerous
-                    }
-                }
-                _ => (),
-            }
 
             result
         }
@@ -332,11 +307,18 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                 };
                 fresh_ctx.insert_variable(
                     arg.to_owned(),
-                    IfcExpEval::new(arg_level, Safety::Safe, true),
+                    IfcExpEval::new(arg_level, true, vec![None]),
                 );
             }
 
-            ifc_check(body, &mut fresh_ctx)?
+            let mut result = ifc_check(body, &mut fresh_ctx)?;
+
+            // If it doesn't use the parameter, we add an additional no-constraint on it
+            if !result.is_arg { 
+                result.argument_constraints.push(None);
+            }
+
+            result
         }
         AST::Conditional(ife, then, els) => {
             let old_ctx_level = ctx.level.clone();
@@ -350,7 +332,6 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             // Then check the then
             let then_e = ifc_check(then, ctx)?;
             result.level.extend(then_e.level.clone());
-            result.safety.with(then_e.safety);
             result.is_arg |= then_e.is_arg;
 
             if let Some(els) = els {
@@ -358,7 +339,6 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                 // since it depends on the then branch.
                 ctx.level.extend(then_e.level);
                 let els_e = ifc_check(els, ctx)?;
-                result.safety.with(els_e.safety);
                 result.is_arg |= els_e.is_arg;
                 result.level.extend(els_e.level);
 
@@ -373,7 +353,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
         }
         AST::Tuple(values) | AST::List(values) | AST::Operation(_, values) => unite(values, ctx)?,
         AST::Unit | AST::Unreachable | AST::Number(_) | AST::StringLiteral(_) | AST::Boolean(_) => {
-            IfcExpEval::empty(Safety::Safe)
+            IfcExpEval::default()
         }
         AST::Identifier(ident) => match ctx.get(ident) {
             Some(level) => level.to_owned(),
@@ -387,7 +367,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                     .map(|l| l.to_owned())
                     .collect()
             };
-            IfcExpEval::new(level, Safety::Safe, false)
+            IfcExpEval::new(level,false, vec![None])
         }
     })
 }
