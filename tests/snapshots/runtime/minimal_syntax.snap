@@ -1,0 +1,16 @@
+---
+source: tests/runtime.rs
+---
+Ok(
+    RuntimeValue {
+        value: Number(
+            42.0,
+        ),
+        value_label: SecurityLabel {
+            labels: {},
+        },
+        type_label: SecurityLabel {
+            labels: {},
+        },
+    },
+)

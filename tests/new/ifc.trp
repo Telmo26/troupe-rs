@@ -1,3 +1,0 @@
-let val a = 10 raisedTo `{alice}`
-in printWithLabels a
-end

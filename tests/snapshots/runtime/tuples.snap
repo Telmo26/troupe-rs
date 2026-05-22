@@ -1,0 +1,14 @@
+---
+source: tests/runtime.rs
+---
+Ok(
+    RuntimeValue {
+        value: Unit,
+        value_label: SecurityLabel {
+            labels: {},
+        },
+        type_label: SecurityLabel {
+            labels: {},
+        },
+    },
+)

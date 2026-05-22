@@ -1,0 +1,9 @@
+---
+source: tests/ifc.rs
+---
+Ok(
+    {
+        "test",
+        "test2",
+    },
+)

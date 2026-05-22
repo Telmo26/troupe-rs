@@ -4,5 +4,5 @@ let
     |   (_, a, "test") when a = 3 => 3
     |   a => a
 in
-    print test
+    test
 end

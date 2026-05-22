@@ -1,0 +1,8 @@
+---
+source: tests/runner.rs
+---
+Ok(
+    {
+        "high",
+    },
+)
