@@ -23,4 +23,4 @@ harness = false
 
 [dev-dependencies]
 datatest-stable = "0.3.3"
-insta = { version = "1.47.2", features = ["yaml"] }
+insta = "1.47.2"
