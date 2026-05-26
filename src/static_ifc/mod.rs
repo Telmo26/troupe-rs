@@ -303,12 +303,17 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                     }
                 }
             }
+
+            let mut new_constraints = callee_e.argument_constraints;
+            if !arg_e.is_arg {
+                new_constraints.extend(arg_e.argument_constraints);
+            }
             
             // We propagate the constraints
             let mut result = IfcExpEval::new(
                 arg_e.level,
                 callee_e.is_arg || arg_e.is_arg,
-                callee_e.argument_constraints,
+                new_constraints,
             );
             result.level.extend(callee_e.level);
 

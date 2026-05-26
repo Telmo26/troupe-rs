@@ -1,0 +1,6 @@
+let 
+    val s = 3 raisedTo `{alice}`
+    fun id x = x
+in 
+    (id adv) s
+end

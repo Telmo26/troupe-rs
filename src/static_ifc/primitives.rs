@@ -47,11 +47,9 @@ pub fn match_primitive<'a>(ast: &'a AST) -> Option<PrimitiveApp<'a>> {
 
                     return None
                 }
-
                 _ => None
             }
         }
-
         _ => None,
     }
 }
