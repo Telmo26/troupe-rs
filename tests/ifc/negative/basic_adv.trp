@@ -1,0 +1,5 @@
+let
+    val s = 3 raisedTo `{alice}`
+in
+    adv s
+end

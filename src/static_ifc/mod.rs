@@ -25,16 +25,23 @@ fn strict_level() -> Level {
 #[derive(Clone, Debug, Default)]
 struct IfcExpEval {
     level: Level,
-    is_arg: bool,
+    argument_names: Option<Vec<String>>,
     argument_constraints: Vec<Option<Level>>,
+    free_var_constraints: HashMap<String, Level>
 }
 
 impl IfcExpEval {
-    fn new(level: Level, is_arg: bool, argument_constraints: Vec<Option<Level>>) -> Self {
+    fn new(
+        level: Level, 
+        argument_names: Option<Vec<String>>,
+        argument_constraints: Vec<Option<Level>>,
+        free_var_constraints: HashMap<String, Level>,
+    ) -> Self {
         Self {
             level,
-            is_arg,
-            argument_constraints
+            argument_names,
+            argument_constraints,
+            free_var_constraints
         }
     }
 }
@@ -64,11 +71,21 @@ impl Ctx {
             ),
             (
                 "send".to_string(),
-                IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
+                IfcExpEval::new(
+                    Level::new(),
+                    None,
+                    vec![Some(BTreeSet::new())],
+                    Default::default(),
+                ),
             ),
             (
                 "adv".to_string(),
-                IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
+                IfcExpEval::new(
+                    Level::new(),
+                    None,
+                    vec![Some(BTreeSet::new())],
+                    Default::default()
+                ),
             ),
             (
                 "print".to_string(),
@@ -136,7 +153,15 @@ fn unite(values: &[AST], ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
     for value in values {
         let res = ifc_check(value, ctx)?;
         e.level.extend(res.level);
-        e.is_arg |= res.is_arg;
+        if let Some(arg) = res.argument_names {
+            e.argument_names = e.argument_names.map(|mut names| { names.extend(arg); names }) // We add the arg names of all members
+        }
+
+        for (var, constraints) in res.free_var_constraints {
+            e.free_var_constraints.entry(var)
+                .or_default()
+                .extend(constraints);
+        }
     }
 
     Ok(e)
@@ -186,8 +211,9 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                     } else {
                         Level::new()
                     },
-                    false,
-                    vec![None]
+                    None,
+                    vec![None],
+                    Default::default()
                 );
 
                 bind_pattern_variables(name, &initial, &mut rec_ctx);
@@ -199,11 +225,15 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
             with_pattern_bound(
                 name,
-                &IfcExpEval::new(var_e.level.clone(), false, var_e.argument_constraints),
+                &IfcExpEval::new(var_e.level.clone(), None, var_e.argument_constraints, Default::default()),
                 ctx,
                 |fresh_ctx| {
                     let mut in_e = ifc_check(body, fresh_ctx)?;
                     in_e.level.extend(var_e.level.clone());
+
+                    for (var, constraints) in var_e.free_var_constraints {
+                        in_e.free_var_constraints.entry(var).or_default().extend(constraints);
+                    }
                     Ok(in_e)
                 },
             )?
@@ -216,7 +246,12 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
 
             ctx.level.extend(expr_e.level.clone());
 
-            let mut res = IfcExpEval::new(expr_e.level.clone(), false, vec![None]);
+            let mut res = IfcExpEval::new(
+                expr_e.level.clone(), 
+                None,
+                vec![None],
+                Default::default()
+            );
 
             for clause in clauses {
                 let clause_e = with_pattern_bound(&clause.pattern, &expr_e, ctx, |clause_ctx| {
@@ -235,7 +270,9 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                 })?;
 
                 res.level.extend(clause_e.level);
-                res.is_arg |= clause_e.is_arg;
+                if let Some(arg) = clause_e.argument_names {
+                    res.argument_names = res.argument_names.map(|mut names| { names.extend(arg); names }) // We add the arg names of all members
+                }
             }
 
             ctx.level = old_pc;
@@ -265,39 +302,66 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                         value 
                     } => {
                         let ifc_exp = ifc_check(value, ctx)?;
-                        
-                        match &ctx.trustmap {
-                            Some(map) if let Some(allowed_levels) = map.get(&target) => {
-                                if allowed_levels.is_superset(&ifc_exp.level) {
-                                    return Ok(IfcExpEval::new(
-                                        Level::new(), 
-                                        ifc_exp.is_arg,
-                                        vec![Some(allowed_levels.clone())]
-                                    ))
-                                } else {
-                                    return Err(StaticIfcError::IOOperationOnSecretVariables)
-                                }
-                            },
-                            _ => if ifc_exp.level.is_empty() {
-                                return Ok(IfcExpEval::new(Level::new(), ifc_exp.is_arg, vec![Some(BTreeSet::new())]))
-                            } else {
-                                return Err(StaticIfcError::IOOperationOnSecretVariables)
+
+                        // Allowed level is either in the trust map or bottom
+                        let allowed_levels = match &ctx.trustmap {
+                            Some(map) => map.get(&target).cloned().unwrap_or_else(Level::new),
+                            None => Level::new(),
+                        };
+
+                        // PC check
+                        if !allowed_levels.is_superset(&ctx.level) {
+                            return Err(StaticIfcError::ObservableEffectUnderSecretPc);
+                        }
+
+                        let mut combined_free_vars = ifc_exp.free_var_constraints;
+
+                        // If the value is a parameter, add the level to the free var bindings
+                        if let Some(arg_names) = &ifc_exp.argument_names {
+                            for arg_name in arg_names {
+                                combined_free_vars.entry(arg_name.clone())
+                                    .or_default()
+                                    .extend(allowed_levels.clone());
+                            }
+                        } else {
+                            // Otherwise, perform a level check
+                            if !allowed_levels.is_superset(&ifc_exp.level) {
+                                return Err(StaticIfcError::IOOperationOnSecretVariables);
                             }
                         }
+                        
+                        return Ok(IfcExpEval::new(
+                            Level::new(), 
+                            None,
+                            vec![Some(allowed_levels)],
+                            combined_free_vars
+                        ));
                     }
                 }
             }
 
             let arg_e = ifc_check(argument, &mut arg_ctx)?;
 
-            // If the argument is a parameter, the constraint must not be removed,
-            // since we do not know the label of the value to be substituted in
-            if !arg_e.is_arg {
-                // We get the constraint for this level of the call
-                let current_constraint = callee_e.argument_constraints.pop();
+            let mut combined_free_vars = callee_e.free_var_constraints;
+            for (var, constraint) in arg_e.free_var_constraints {
+                combined_free_vars.entry(var)
+                    .or_default()
+                    .extend(constraint);
+            }
 
-                // If the PC label or the value's label is higher than the one authorized by the called function
-                if let Some(Some(allowed_levels)) = current_constraint {
+            // We get the constraint for this level of the call
+            let current_constraint = callee_e.argument_constraints.pop().flatten();
+
+            if let Some(allowed_levels) = current_constraint {
+                // This is a constraint on a free variable
+                if let Some(arg_names) = &arg_e.argument_names {
+                    for arg_name in arg_names {
+                        combined_free_vars.entry(arg_name.clone())
+                            .or_default()
+                            .extend(allowed_levels.clone());
+                    }
+                } else {
+                    // If the PC label or the value's label is higher than the one authorized by the called function
                     if !allowed_levels.is_superset(&ctx.level) || !allowed_levels.is_superset(&arg_e.level) {
                         return Err(StaticIfcError::IOOperationOnSecretVariables);
                     }
@@ -305,15 +369,16 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             }
 
             let mut new_constraints = callee_e.argument_constraints;
-            if !arg_e.is_arg {
+            if arg_e.argument_names.is_none() {
                 new_constraints.extend(arg_e.argument_constraints);
             }
             
             // We propagate the constraints
             let mut result = IfcExpEval::new(
                 arg_e.level,
-                callee_e.is_arg || arg_e.is_arg,
+                None,
                 new_constraints,
+                combined_free_vars
             );
             result.level.extend(callee_e.level);
 
@@ -331,16 +396,29 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                 };
                 fresh_ctx.insert_variable(
                     arg.to_owned(),
-                    IfcExpEval::new(arg_level, true, vec![None]),
+                    IfcExpEval::new(
+                        arg_level,
+                        Some(vec![arg.clone()]),
+                        vec![None], 
+                        Default::default()
+                    ),
                 );
             }
 
             let mut result = ifc_check(body, &mut fresh_ctx)?;
 
-            // If it doesn't use the parameter, we add an additional no-constraint on it
-            if !result.is_arg { 
-                result.argument_constraints.push(None);
+            // Default for no argument
+            let mut param_constraint = None;
+
+            // If there is an argument
+            if let Some(arg) = arg {
+                // If constraints were put on it
+                if let Some(constraints) = result.free_var_constraints.remove(arg) {
+                    param_constraint = Some(constraints);
+                }
             }
+
+            result.argument_constraints.push(param_constraint);
 
             result
         }
@@ -356,14 +434,24 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             // Then check the then
             let then_e = ifc_check(then, ctx)?;
             result.level.extend(then_e.level.clone());
-            result.is_arg |= then_e.is_arg;
+            result.argument_names = result.argument_names.map(|mut names| { 
+                if let Some(then_names) = then_e.argument_names {
+                    names.extend(then_names);
+                }
+                names 
+            });
 
             if let Some(els) = els {
                 // If there is an else, we need to extend the ctx level
                 // since it depends on the then branch.
                 ctx.level.extend(then_e.level);
                 let els_e = ifc_check(els, ctx)?;
-                result.is_arg |= els_e.is_arg;
+                result.argument_names = result.argument_names.map(|mut names| { 
+                    if let Some(then_names) = els_e.argument_names {
+                        names.extend(then_names);
+                    }
+                    names 
+                });
                 result.level.extend(els_e.level);
 
                 // And we also need to recheck the then branch since it depends on els.
@@ -391,7 +479,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                     .map(|l| l.to_owned())
                     .collect()
             };
-            IfcExpEval::new(level,false, vec![None])
+            IfcExpEval::new(level,None, vec![None], Default::default())
         }
     })
 }
