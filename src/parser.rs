@@ -145,6 +145,9 @@ impl<'a> Parser<'a> {
             }
             match res.unwrap() {
                 (Token::SemiColon, _) => {
+                    if min_bp > 0 {
+                        break; // Let the outer parse_expr handle it
+                    }
                     self.next()?;
                     lhs = self.parse_declaration(Pattern::Empty, lhs, false)?;
                     break;
@@ -162,6 +165,9 @@ impl<'a> Parser<'a> {
 
                 // This is for tuple or list function parameters
                 (Token::LeftParenthesis, _) | (Token::LeftBracket, _) => {
+                    if min_bp == FUNCTION_CALL_BINDING_POWER {
+                        break;
+                    }
                     let argument = Box::new(self.parse_expr(FUNCTION_CALL_BINDING_POWER)?);
                     lhs = AST::FunctionCall {
                         callee: Box::new(lhs),
@@ -196,6 +202,9 @@ impl<'a> Parser<'a> {
                 }
 
                 (token, _) if is_value(token) => {
+                    if min_bp == FUNCTION_CALL_BINDING_POWER {
+                        break;
+                    }
                     let argument = parse_value(self.next().unwrap().0);
                     lhs = AST::FunctionCall {
                         callee: Box::new(lhs),
@@ -517,7 +526,7 @@ impl<'a> Parser<'a> {
 const FUNCTION_CALL_BINDING_POWER: u8 = 13;
 fn infix_binding_power(operator: &str) -> Option<(u8, u8)> {
     match operator {
-        "*" | "/" => Some((11, 12)),
+        "*" | "/" | "^" => Some((11, 12)),
         "+" | "-" => Some((9, 10)),
         "=" | "<=" | ">=" | "<" | ">" => Some((7, 8)),
         "andalso" => Some((5, 6)),

@@ -99,6 +99,7 @@ fn get_type_constraints(ast: &AST, ctx: &mut Ctx) -> Result<Type, TypeError> {
                     let list = Type::List(Box::new(t.clone()));
                     (vec![t, list.clone()], list)
                 }
+                "^" => (vec![Type::String; 2], Type::String),
                 _ => return Err(TypeError::InvalidOperator(op.to_string())),
             };
 

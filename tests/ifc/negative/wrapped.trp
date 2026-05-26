@@ -1,5 +1,5 @@
 let
-    fun gen x = fn a => print
+    fun gen x = fn a => adv
     val x = gen 3
     val y = 5 raisedTo `{alice}`
 in 

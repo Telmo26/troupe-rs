@@ -34,7 +34,7 @@ impl AST {
             Identifier(ident) if ident == id => true,
             Unit | Number(_) | StringLiteral(_) | Boolean(_) | SecurityLevel(_) | Unreachable | Identifier(_) => false,
             
-            Let { value, .. } => value.contains_identifier(id),
+            Let { value, body, ..} => value.contains_identifier(id) | body.contains_identifier(id),
             FunctionCall { callee, argument } => callee.contains_identifier(id) || argument.contains_identifier(id),
             Operation(_, values) | Tuple(values) | List(values) => values.iter().any(|v| v.contains_identifier(id)),
             Conditional(cond, b1, b2) => {

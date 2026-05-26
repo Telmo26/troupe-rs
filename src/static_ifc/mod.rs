@@ -67,8 +67,16 @@ impl Ctx {
                 IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
             ),
             (
-                "print".to_string(),
+                "adv".to_string(),
                 IfcExpEval::new(Level::new(), false, vec![Some(BTreeSet::new())]),
+            ),
+            (
+                "print".to_string(),
+                IfcExpEval::default(),
+            ),
+            (
+                "printString".to_string(),
+                IfcExpEval::default(),
             ),
             (
                 "receive".to_string(),
@@ -89,6 +97,18 @@ impl Ctx {
             (
                 "declassify".to_string(), 
                 IfcExpEval::default()
+            ),
+            (
+                "node".to_string(),
+                IfcExpEval::default(),
+            ),
+            (
+                "whereis".to_string(),
+                IfcExpEval::default()
+            ),
+            (
+                "register".to_string(),
+                IfcExpEval::default(),
             ),
         ]
         .into_iter()
@@ -241,13 +261,13 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                         return ifc_check(target, ctx);
                     },
                     PrimitiveApp::Send { 
-                        target: AST::StringLiteral(destination), 
+                        target, 
                         value 
                     } => {
                         let ifc_exp = ifc_check(value, ctx)?;
                         
                         match &ctx.trustmap {
-                            Some(map) if let Some(allowed_levels) = map.get(destination) => {
+                            Some(map) if let Some(allowed_levels) = map.get(&target) => {
                                 if allowed_levels.is_superset(&ifc_exp.level) {
                                     return Ok(IfcExpEval::new(
                                         Level::new(), 
@@ -265,7 +285,6 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
                             }
                         }
                     }
-                    _ => ()
                 }
             }
 

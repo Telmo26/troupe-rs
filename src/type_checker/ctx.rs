@@ -64,6 +64,26 @@ impl Ctx {
                     Box::new(g),
                 )
             }
+            "node" => Type::Lambda(
+                Box::new(Type::Int), 
+                Box::new(Type::Int)
+            ),
+            "whereis" => Type::Lambda(
+                Box::new(Type::Tuple(vec![Type::String, Type::String])), 
+                Box::new(Type::Int)
+            ),
+            "printString" => Type::Lambda(
+                Box::new(Type::String), 
+                Box::new(Type::Unit)
+            ),
+            "register" => Type::Lambda(
+                Box::new(Type::Tuple(vec![
+                    Type::String,
+                    Type::Int,
+                    Type::Authority
+                ])), 
+                Box::new(Type::Unit)
+            ),
             _ => return None,
         };
 

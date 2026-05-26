@@ -2,7 +2,7 @@ use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
-#[logos(skip r"\(\*[ '\=:\[\]a-zA-Z0-9\(\*\*\)]*\*\)")]
+#[logos(skip r"\(\*[ ;\.\n\-'\=:\[\]a-zA-Z0-9\(\*\*\)]*\*\)")] // Comments
 pub enum Token {
     #[token("let")]
     Let,
@@ -19,7 +19,7 @@ pub enum Token {
     #[token("end")]
     End,
 
-    #[regex(r"::|raisedTo|andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_string(), priority=20)]
+    #[regex(r"\^|::|raisedTo|andalso|orelse|\+|-|\*|\/|<=|>=|<|>", |op| op.slice().to_string(), priority=20)]
     Operator(String),
 
     #[token("(")]
@@ -49,7 +49,7 @@ pub enum Token {
     #[regex(r"true|false", |boolean| boolean.slice().parse().ok())]
     Boolean(bool),
 
-    #[regex("\"[a-zA-Z0-9 ]+\"", |lit| lit.slice().trim_matches('"').to_string())]
+    #[regex("\"[:.a-zA-Z0-9 ]+\"", |lit| lit.slice().trim_matches('"').to_string())]
     StringLiteral(String),
 
     #[regex(r"[a-zA-Z\_]+[0-9]*", |id| id.slice().to_string())]

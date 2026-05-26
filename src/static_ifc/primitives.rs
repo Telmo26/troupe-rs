@@ -7,7 +7,7 @@ pub enum PrimitiveApp<'a> {
         target: &'a AST,
     },
     Send {
-        target: &'a AST,
+        target: String,
         value: &'a AST
     }
 }
@@ -30,10 +30,22 @@ pub fn match_primitive<'a>(ast: &'a AST) -> Option<PrimitiveApp<'a>> {
 
                 "send" if let AST::Tuple(values) = argument.as_ref() => {
                     if let [target, value] = values.as_slice() {
-                        Some(PrimitiveApp::Send { target, value })
-                    } else {
-                        None
-                    }
+                        let target = match target {
+                            AST::StringLiteral(s) => s.clone(),
+                            AST::FunctionCall { callee, argument } if let AST::Identifier(s) = callee.as_ref() && s == "whereis" => {
+                                if let AST::Tuple(args) = argument.as_ref() 
+                                    && let Some(AST::StringLiteral(dest)) = &args.get(0) {
+                                    dest.clone()
+                                } else {
+                                    return None
+                                }
+                            }
+                            _ => return None
+                        };
+                        return Some(PrimitiveApp::Send { target, value })
+                    };
+
+                    return None
                 }
 
                 _ => None

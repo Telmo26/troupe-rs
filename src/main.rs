@@ -17,7 +17,12 @@ struct Args {
     file: PathBuf,
 
     #[arg(long, name="trustmap.json")]
-    trustmap: Option<PathBuf>
+    trustmap: Option<PathBuf>,
+
+    #[arg(long, name = "type-checker", default_value = "false")]
+    /// Enables the optional type checker. Note that valid type-checked
+    /// programs are a strict subset of valid Troupe programs
+    r#type_checker: bool
 }
 
 fn main() -> anyhow::Result<()> {
@@ -40,7 +45,10 @@ fn main() -> anyhow::Result<()> {
 
     dbg!(&ast);
 
-    type_check(&ast).expect("Type check failed");
+    if args.type_checker {
+        type_check(&ast).expect("Type check failed");
+    }
+    
     static_ifc_check(&ast, false, trustmap).expect("Static analysis failed.");
 
     let mut interpreter = Interpreter::default();

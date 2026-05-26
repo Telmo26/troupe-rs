@@ -1,5 +1,5 @@
 let
-    fun x z = print z
+    fun x z = adv z
     val y = 5 raisedTo `{alice}`
 in 
     x y
