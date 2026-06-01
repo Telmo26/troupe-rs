@@ -11,16 +11,21 @@ use common::{
 fn runtime_test(path: &Path, file: String) -> datatest_stable::Result<()> {
     let ast = parse_ast(&file)?;
 
-    let mut interpreter = Interpreter::default();
-    let result = interpreter.eval(ast);
+    let interpreter = Interpreter::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
 
-    with_settings("snapshots/runtime", || {
-        insta::assert_debug_snapshot!(
-            path.file_stem().unwrap().to_str().unwrap(),
-            result
-        )}
-    );
-    
+    rt.block_on(async {
+        let result = interpreter.run(ast).await;
+        with_settings("snapshots/runtime", || {
+            insta::assert_debug_snapshot!(
+                path.file_stem().unwrap().to_str().unwrap(),
+                result
+            )}
+        );
+    });
+
     Ok(())
 }
 

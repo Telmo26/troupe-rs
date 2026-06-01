@@ -1,0 +1,20 @@
+import timeout
+
+let fun worker n dest =
+    if n = 0 then send(dest, 0)
+    else 
+        let val pid = self()
+            val spawn_pid = spawn(fn () => worker (n-1) pid)
+            val recv = receive [
+                hn x => x+1
+            ]
+        in send(dest, recv)
+        end
+    val N = 5000
+    val pid = self()
+    val _ = worker N pid
+    val _ = receive [
+        hn x => print x
+    ]
+in exit (authority, 0)
+end

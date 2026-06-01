@@ -163,7 +163,7 @@ impl<'a> Parser<'a> {
                     break;
                 }
 
-                // This is for tuple or list function parameters
+                // This is for tuple, parenthesized expressions or list function parameters
                 (Token::LeftParenthesis, _) | (Token::LeftBracket, _) => {
                     if min_bp == FUNCTION_CALL_BINDING_POWER {
                         break;

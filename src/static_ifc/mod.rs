@@ -49,9 +49,9 @@ impl IfcExpEval {
 #[derive(Debug, Clone)]
 struct Ctx {
     level: Level,
+    trustmap: Option<TrustMap>,
     strict: bool,
     map: HashMap<String, IfcExpEval>,
-    trustmap: Option<TrustMap>
 }
 
 impl Ctx {
@@ -140,6 +140,15 @@ impl Ctx {
             level: Level::new(),
             strict,
             trustmap
+        }
+    }
+
+    fn fork(&self) -> Ctx {
+        Self { 
+            level: Level::new(), 
+            trustmap: self.trustmap.clone(), 
+            strict: self.strict, 
+            map: self.map.clone()
         }
     }
 
@@ -389,8 +398,7 @@ fn ifc_check(ast: &AST, ctx: &mut Ctx) -> Result<IfcExpEval, StaticIfcError> {
             result
         }
         AST::Lambda(arg, body) => {
-            let mut fresh_ctx = Ctx::new(ctx.strict, ctx.trustmap.clone());
-            fresh_ctx.map = ctx.map.clone();
+            let mut fresh_ctx = ctx.fork();
 
             if let Some(arg) = arg {
                 let arg_level = if ctx.strict {

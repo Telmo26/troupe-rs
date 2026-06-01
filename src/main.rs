@@ -16,16 +16,19 @@ use troupe_rs::{
 struct Args {
     file: PathBuf,
 
+    /// Provide a trust map to the program, specifying the trust levels
+    /// of specific nodes.
     #[arg(long, name="trustmap.json")]
     trustmap: Option<PathBuf>,
 
     #[arg(long, name = "type-checker", default_value = "false")]
     /// Enables the optional type checker. Note that valid type-checked
-    /// programs are a strict subset of valid Troupe programs
+    /// programs are a strict subset of valid Troupe programs.
     r#type_checker: bool
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let file_text = std::fs::read_to_string(args.file)?;
     
@@ -36,14 +39,8 @@ fn main() -> anyhow::Result<()> {
         None
     };
 
-    if let Some(tm) = trustmap.as_ref() {
-        dbg!(tm);
-    }
-
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
-
-    dbg!(&ast);
 
     if args.type_checker {
         type_check(&ast).expect("Type check failed");
@@ -51,8 +48,8 @@ fn main() -> anyhow::Result<()> {
     
     static_ifc_check(&ast, false, trustmap).expect("Static analysis failed.");
 
-    let mut interpreter = Interpreter::default();
-    interpreter.run(ast);
+    let interpreter = Interpreter::new();
+    let _ = interpreter.run(ast).await;
 
     Ok(())
 }
