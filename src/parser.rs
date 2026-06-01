@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
                 };
                 Some(p)
             }
-            (Token::Unit, _) => {
+            (Token::Unit, _) | (Token::Wildcard, _) => {
                 self.next()?;
                 None
             }

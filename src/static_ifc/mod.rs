@@ -116,6 +116,10 @@ impl Ctx {
                 IfcExpEval::default()
             ),
             (
+                "declassifydeep".to_string(), 
+                IfcExpEval::default()
+            ),
+            (
                 "node".to_string(),
                 IfcExpEval::default(),
             ),

@@ -1,0 +1,46 @@
+(* Placeholder for the dating-client. Note that in order to communicate 
+   with your server you will need to create the corresponding trustmap *)
+import declassifyutil
+import lists
+let
+   val pid = node ( self ())
+   fun sendProfile () = 
+      let 
+         val profile = (`{bronn}`, "Bronn" raisedTo `{bronn}`, 2000 raisedTo `{bronn}`, false raisedTo `{bronn}`, [] raisedTo `{bronn}`)
+         fun agent p = 
+            let 
+               val (lev, name, year, gender, interests) = p
+               val (_, bronn_name, bronn_year, bronn_gender, bronn_interesets) = profile
+            in 
+               if gender then 
+                  (
+                     true, 
+                     (lev, declassify(bronn_name, authority, lev), declassify(bronn_year, authority, lev), declassify(bronn_gender, authority, lev), declassify(bronn_interesets, authority, lev))
+                  )
+               else 
+                  (false, ())
+            end
+      in 
+         send ( whereis ("QmeUUFFNURHqbAFcwvULoxc52ywxx3j85QNdMkCiibJTFJ", "datingServer"), ("NEWPROFILE", (profile, agent, pid)));
+         print ("NEWPROFILE", (profile, agent, pid))
+      end
+
+   fun receiveResponse () = 
+      receive [hn ("NEWMATCH", matched) =>
+                     send ( whereis (
+                        ("QmeUUFFNURHqbAFcwvULoxc52ywxx3j85QNdMkCiibJTFJ", "datingServer"),
+                        ("NEWPROFILE", (matched, (fn _ => (true, declassifydeep(matched, authority, `{}`))), pid))
+                     )),
+               hn (default) => print default; receiveResponse()
+      ]
+
+   fun main () = 
+      let val thisNode = node ( self ())
+          val _ = printString ("Running node with identifier: " ^ thisNode)
+          val _ = register ("client", spawn receiveResponse, authority)
+      in
+         sendProfile ()
+      end
+in 
+   main ()
+end

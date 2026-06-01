@@ -26,6 +26,18 @@ pub fn match_primitive<'a>(ast: &'a AST) -> Option<PrimitiveApp<'a>> {
                     } else {
                         None
                     }
+                },
+
+                "declassifydeep" if let AST::Tuple(values) = argument.as_ref() => {
+                    if let [value, authority, target] = values.as_slice() {
+                        Some(PrimitiveApp::Declassify {
+                            value,
+                            authority,
+                            target,
+                        })
+                    } else {
+                        None
+                    }
                 }
 
                 "send" if let AST::Tuple(values) = argument.as_ref() => {
