@@ -44,8 +44,6 @@ async fn main() -> anyhow::Result<()> {
     let lexer = Token::lexer(&file_text);
     let ast = parse(lexer).unwrap();
 
-    dbg!(&ast);
-
     if args.type_checker {
         type_check(&ast).expect("Type check failed");
     }

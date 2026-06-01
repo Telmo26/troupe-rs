@@ -1,8 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::parser::AST;
 
-use tokio::task::JoinHandle;
+use tokio::{
+    task::JoinHandle,
+    sync::Mutex
+};
 use uuid::Uuid;
 
 mod runtime_error;
@@ -64,7 +67,7 @@ impl Interpreter {
         return_value
     }
 
-    pub fn spawn_process(self: &Arc<Self>, new_env: EnvPtr, tree: AST) -> Uuid {
+    pub async fn spawn_process(self: &Arc<Self>, new_env: EnvPtr, tree: AST) -> Uuid {
         let uuid = Uuid::new_v4();
         let runtime = Arc::downgrade(self);
         let mailbox = self.network_layer.new_local_id(uuid);
@@ -75,7 +78,8 @@ impl Interpreter {
             process.eval(tree).await
         });
 
-        self.processes.lock().unwrap()
+        self.processes.lock()
+            .await
             .push((uuid, handle));
 
         uuid
@@ -84,7 +88,7 @@ impl Interpreter {
     pub async fn shutdown(&self) {
         loop {
             let handle_opt = {
-                let mut handles = self.processes.lock().unwrap();
+                let mut handles = self.processes.lock().await;
                 handles.pop()
             };
 

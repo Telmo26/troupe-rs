@@ -61,7 +61,8 @@ async fn builtin_spawn(process: &mut Process, runtime_value: RuntimeValue) -> Re
     new_env.extend(env);
 
     let new_uuid = process.get_runtime()?
-        .spawn_process(new_env, body);
+        .spawn_process(new_env, body)
+        .await;
 
     Ok(Value::PID(new_uuid).into())
 }
