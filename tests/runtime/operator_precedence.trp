@@ -6,11 +6,7 @@ let
     (1 = 1) andalso false
 
   val andalso_vs_orelse =
-    true orelse false
-
-  val negative = -(2 + 3)
+    true andalso false orelse true
 in
-  print true;
-  print comparison_vs_andalso;
-  print andalso_vs_orelse
+  (arithmetic, comparison_vs_andalso, andalso_vs_orelse)
 end

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, BTreeSet};
 
 use crate::{
     parser::Pattern,
@@ -64,6 +64,26 @@ impl Ctx {
                     Box::new(g),
                 )
             }
+            "node" => Type::Lambda(
+                Box::new(Type::Int), 
+                Box::new(Type::Int)
+            ),
+            "whereis" => Type::Lambda(
+                Box::new(Type::Tuple(vec![Type::String, Type::String])), 
+                Box::new(Type::Int)
+            ),
+            "printString" => Type::Lambda(
+                Box::new(Type::String), 
+                Box::new(Type::Unit)
+            ),
+            "register" => Type::Lambda(
+                Box::new(Type::Tuple(vec![
+                    Type::String,
+                    Type::Int,
+                    Type::Authority
+                ])), 
+                Box::new(Type::Unit)
+            ),
             _ => return None,
         };
 
@@ -90,7 +110,6 @@ impl Ctx {
     pub fn insert_new_variable_with_set(&mut self, var: &Pattern, t: Type, free_vars: &[u32]) {
         match var {
             Pattern::Variable(child) => {
-                dbg!(child);
                 self.insert(child.to_owned(), Scheme::new(t, free_vars.to_vec()));
             }
             Pattern::Tuple(variables) => {
@@ -136,8 +155,8 @@ impl Ctx {
         ty
     }
 
-    pub fn get_context_free_variables(&self) -> HashSet<u32> {
-        let mut result = HashSet::new();
+    pub fn get_context_free_variables(&self) -> BTreeSet<u32> {
+        let mut result = BTreeSet::new();
 
         for scheme in self.name_map.values() {
             let mut fv = scheme.ty.get_free_variables();

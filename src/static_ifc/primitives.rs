@@ -6,101 +6,62 @@ pub enum PrimitiveApp<'a> {
         authority: &'a AST,
         target: &'a AST,
     },
-
-    Print {
-        value: &'a AST,
-    },
-
-    Spawn {
-        value: &'a AST,
-    },
-
-    Sleep {
-        value: &'a AST,
-    },
-
-    Receive {
-        value: &'a AST,
-    },
-
     Send {
-        value: &'a AST,
-    },
-
-    ExitAfterTimeout {
-        value: &'a AST,
-    },
-
-    Exit {
-        value: &'a AST,
-    },
-
-    Self_,
-
-    MkUuid,
-
-    Authority,
+        target: String,
+        value: &'a AST
+    }
 }
 
 pub fn match_primitive<'a>(ast: &'a AST) -> Option<PrimitiveApp<'a>> {
     match ast {
-        AST::Identifier(name) => match name.as_str() {
-            "self" => Some(PrimitiveApp::Self_),
-            "mkuuid" => Some(PrimitiveApp::MkUuid),
-            "authority" => Some(PrimitiveApp::Authority),
-            _ => None,
-        },
+        AST::FunctionCall { callee, argument } if let AST::Identifier(name) = callee.as_ref() => {
+            match name.as_str() {
+                "declassify" if let AST::Tuple(values) = argument.as_ref() => {
+                    if let [value, authority, target] = values.as_slice() {
+                        Some(PrimitiveApp::Declassify {
+                            value,
+                            authority,
+                            target,
+                        })
+                    } else {
+                        None
+                    }
+                },
 
-        AST::FunctionCall { callee, argument } => {
-            if let AST::Identifier(name) = callee.as_ref() {
-                if name == "declassify" {
-                    if let AST::Tuple(values) = argument.as_ref() {
-                        if let [value, authority, target] = values.as_slice() {
-                            return Some(PrimitiveApp::Declassify {
-                                value,
-                                authority,
-                                target,
-                            });
-                        }
+                "declassifydeep" if let AST::Tuple(values) = argument.as_ref() => {
+                    if let [value, authority, target] = values.as_slice() {
+                        Some(PrimitiveApp::Declassify {
+                            value,
+                            authority,
+                            target,
+                        })
+                    } else {
+                        None
                     }
                 }
-            }
 
-            if let AST::Identifier(name) = callee.as_ref() {
-                match name.as_str() {
-                    "print" => {
-                        return Some(PrimitiveApp::Print { value: argument });
-                    }
+                "send" if let AST::Tuple(values) = argument.as_ref() => {
+                    if let [target, value] = values.as_slice() {
+                        let target = match target {
+                            AST::StringLiteral(s) => s.clone(),
+                            AST::FunctionCall { callee, argument } if let AST::Identifier(s) = callee.as_ref() && s == "whereis" => {
+                                if let AST::Tuple(args) = argument.as_ref() 
+                                    && let Some(AST::StringLiteral(dest)) = &args.get(0) {
+                                    dest.clone()
+                                } else {
+                                    return None
+                                }
+                            }
+                            _ => return None
+                        };
+                        return Some(PrimitiveApp::Send { target, value })
+                    };
 
-                    "spawn" => {
-                        return Some(PrimitiveApp::Spawn { value: argument });
-                    }
-
-                    "sleep" => {
-                        return Some(PrimitiveApp::Sleep { value: argument });
-                    }
-
-                    "receive" => {
-                        return Some(PrimitiveApp::Receive { value: argument });
-                    }
-
-                    "send" => {
-                        return Some(PrimitiveApp::Send { value: argument });
-                    }
-
-                    "exitAfterTimeout" => {
-                        return Some(PrimitiveApp::ExitAfterTimeout { value: argument });
-                    }
-
-                    "exit" => return Some(PrimitiveApp::Exit { value: argument }),
-
-                    _ => {}
+                    return None
                 }
+                _ => None
             }
-
-            None
         }
-
         _ => None,
     }
 }

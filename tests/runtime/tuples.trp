@@ -1,10 +1,7 @@
 let 
     val test = (1, 2, true) raisedTo `{test}`
     val test2 = (1 + 2, 3 * 4 = 12 andalso true)
-    fun test3 n m = m * n
     val (a, b, _) = test
 in 
-    print (1, 2, true);
-    test3 4 5;
-    print b
+    ()
 end

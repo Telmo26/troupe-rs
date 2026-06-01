@@ -1,0 +1,5 @@
+let
+    fun id x = x
+in
+    (id adv) 3
+end

@@ -1,0 +1,6 @@
+let
+    fun f x = fn y => adv y
+    val s = 3 raisedTo `{alice}`
+in
+    (f ()) s
+end

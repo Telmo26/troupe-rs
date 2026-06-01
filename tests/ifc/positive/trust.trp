@@ -1,0 +1,4 @@
+let val value = 3 raisedTo `{test, test2}`
+in
+    send ("trusted", value)
+end

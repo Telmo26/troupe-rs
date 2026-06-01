@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {
@@ -15,7 +15,7 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn get_free_variables(&self) -> HashSet<u32> {
+    pub fn get_free_variables(&self) -> BTreeSet<u32> {
         match self {
             Type::Lambda(t1, t2) => {
                 let mut set = t1.get_free_variables();
@@ -23,12 +23,12 @@ impl Type {
                 set
             }
             Type::List(t) => t.get_free_variables(),
-            Type::Tuple(types) => types.into_iter().fold(HashSet::new(), |mut acc, t| {
+            Type::Tuple(types) => types.into_iter().fold(BTreeSet::new(), |mut acc, t| {
                 acc.extend(t.get_free_variables());
                 acc
             }),
-            Type::Gen(x) => HashSet::from([*x]),
-            _ => HashSet::new(),
+            Type::Gen(x) => BTreeSet::from([*x]),
+            _ => BTreeSet::new(),
         }
     }
 }

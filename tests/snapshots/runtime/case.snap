@@ -1,0 +1,50 @@
+---
+source: tests/runtime.rs
+---
+Ok(
+    RuntimeValue {
+        value: Tuple(
+            [
+                RuntimeValue {
+                    value: Number(
+                        1.0,
+                    ),
+                    value_label: SecurityLabel {
+                        labels: {},
+                    },
+                    type_label: SecurityLabel {
+                        labels: {},
+                    },
+                },
+                RuntimeValue {
+                    value: Number(
+                        2.0,
+                    ),
+                    value_label: SecurityLabel {
+                        labels: {},
+                    },
+                    type_label: SecurityLabel {
+                        labels: {},
+                    },
+                },
+                RuntimeValue {
+                    value: String(
+                        "test",
+                    ),
+                    value_label: SecurityLabel {
+                        labels: {},
+                    },
+                    type_label: SecurityLabel {
+                        labels: {},
+                    },
+                },
+            ],
+        ),
+        value_label: SecurityLabel {
+            labels: {},
+        },
+        type_label: SecurityLabel {
+            labels: {},
+        },
+    },
+)

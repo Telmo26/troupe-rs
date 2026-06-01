@@ -1,0 +1,6 @@
+let
+    fun x z = print "hello"
+    val y = 5 raisedTo `{alice}`
+in 
+    x y
+end

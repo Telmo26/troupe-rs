@@ -1,0 +1,7 @@
+---
+source: tests/ifc.rs
+assertion_line: 19
+---
+Err(
+    IOOperationOnSecretVariables,
+)

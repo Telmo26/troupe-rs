@@ -37,7 +37,7 @@ impl Interpreter {
         })
     }
 
-    pub async fn run(self: &Arc<Self>, tree: AST) {
+    pub async fn run(self: &Arc<Self>, tree: AST) -> Result<RuntimeValue, RuntimeError> {
         let uuid = Uuid::new_v4();
         let runtime = Arc::downgrade(&self);
         let mailbox = self.network_layer.new_local_id(uuid);
@@ -48,12 +48,20 @@ impl Interpreter {
 
         let mut root_process = Process::new(uuid, runtime, env, mailbox);
 
-        match root_process.eval(tree).await {
-            Ok(value) => println!("Main thread {} terminated with value {value:?}", root_process.uuid.to_string()),
-            Err(e) => eprintln!("Main thread {} terminated early due to an error: {e:?}", root_process.uuid.to_string())
+        let return_value = match root_process.eval(tree).await {
+            Ok(value) => {
+                println!("Main thread {} terminated with value {value:?}", root_process.uuid.to_string());
+                Ok(value)
+            }
+            Err(e) => {
+                eprintln!("Main thread {} terminated early due to an error: {e:?}", root_process.uuid.to_string());
+                Err(e)
+            }
         };
         // We wait for all threads to be over
-        self.shutdown().await
+        self.shutdown().await;
+
+        return_value
     }
 
     pub fn spawn_process(self: &Arc<Self>, new_env: EnvPtr, tree: AST) -> Uuid {
@@ -81,7 +89,7 @@ impl Interpreter {
             };
 
             match handle_opt {
-                Some((uuid, handle)) => {
+                Some((_uuid, _handle)) => {
                     // match handle.await {
                     //     Ok(Ok(val)) => println!("Process {uuid} finished: {val:?}"),
                     //     Ok(Err(e)) => eprintln!("Process {uuid} error: {e:?}"),
@@ -336,13 +344,13 @@ impl Interpreter {
     // }
 }
 
-// fn free_variables(body: &AST) -> HashSet<String> {
-//     let mut fv = HashSet::new();
+// fn free_variables(body: &AST) -> BTreeSet<String> {
+//     let mut fv = BTreeSet::new();
 //     compute_fv(body, &mut fv);
 //     fv
 // }
 
-// fn compute_fv(body: &AST, acc: &mut HashSet<String>) {
+// fn compute_fv(body: &AST, acc: &mut BTreeSet<String>) {
 //     match body {
 //         AST::Let { name, value, body, rec } => {
 //             compute_fv(body, acc);
@@ -387,7 +395,7 @@ impl Interpreter {
 //     }
 // }
 
-// fn remove_bound_variables(pat: &Pattern, acc: &mut HashSet<String>) {
+// fn remove_bound_variables(pat: &Pattern, acc: &mut BTreeSet<String>) {
 //     match pat {
 //         Pattern::Empty | Pattern::Value(_) => (),
 //         Pattern::Variable(s) => { acc.remove(s); }

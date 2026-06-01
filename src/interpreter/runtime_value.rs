@@ -1,8 +1,8 @@
-use std::{collections::{HashMap, HashSet, LinkedList}, fmt::Display};
+use std::{collections::{HashMap, BTreeSet, LinkedList}, fmt::Display};
 
 use uuid::Uuid;
 
-use crate::{interpreter::{Interpreter, builtins::Builtin, process::Process, runtime_error::RuntimeError}, parser::AST};
+use crate::{interpreter::{builtins::Builtin, runtime_error::RuntimeError}, parser::AST};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeValue {
@@ -20,6 +20,7 @@ impl RuntimeValue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_type_label(self, label: SecurityLabel) -> RuntimeValue {
         RuntimeValue { 
             value: self.value, 
@@ -109,7 +110,9 @@ impl TryFrom<AST> for Value {
             AST::Boolean(b) => Ok(Value::Boolean(b)),
             AST::Number(n) => Ok(Value::Number(n)),
             AST::StringLiteral(s) => Ok(Value::String(s)),
-            AST::SecurityLevel(level) => Ok(Value::Label(SecurityLabel::try_from(level)?)),
+            AST::SecurityLevel(levels) => Ok(Value::Label(SecurityLabel {
+                labels: levels.into_iter().collect()
+            })),
             _ => Err(RuntimeError::RuntimeError)
         }
     }
@@ -154,22 +157,7 @@ impl Display for Value {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SecurityLabel {
-    labels: HashSet<String>
-}
-
-impl TryFrom<String> for SecurityLabel {
-    type Error = RuntimeError;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.starts_with('{') && value.ends_with('}') {
-            let individual_labels = value[1..value.len() - 1].split(",").map(|l| l.to_string());
-            let labels = individual_labels.collect();
-            Ok(SecurityLabel {
-                labels,
-            })
-        } else {
-            Err(RuntimeError::RuntimeError)
-        }
-    }
+    labels: BTreeSet<String>
 }
 
 impl Display for SecurityLabel {

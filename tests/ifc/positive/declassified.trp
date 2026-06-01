@@ -1,0 +1,6 @@
+let 
+    val s = 3 raisedTo `{alice}`
+in 
+    if (declassify(s, authority, `{}`)) = 3 then adv "1"
+    else adv "2"
+end
